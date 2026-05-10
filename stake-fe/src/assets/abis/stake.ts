@@ -1,3 +1,11 @@
+/**
+ * MetaNode Stake 合约 ABI（由 Solidity 编译产物或导出工具生成）。
+ *
+ * - 前端只依赖其中的函数/事件/错误片段；viem 用 ABI 把 JavaScript 参数编码成 calldata。
+ * - 合约升级若变更接口，需重新生成并替换本文件，否则 read/write 会不匹配。
+ *
+ * 以下内容为自动生成的大段 JSON，不在此逐行注释。
+ */
 export const stakeAbi = [
   {
     "inputs": [],

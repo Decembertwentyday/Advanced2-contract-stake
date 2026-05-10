@@ -1,2 +1,7 @@
-
-export const Pid = 0
+/**
+ * 业务常量：质押池 ID（Pool Id）。
+ *
+ * 合约侧通常用 uint256 区分多个池（ETH 池、某 ERC20 池等）。
+ * 本项目前端写死为 0，与部署时创建的池索引一致；若合约增加多池 UI，可改成下拉框状态。
+ */
+export const Pid = 0;

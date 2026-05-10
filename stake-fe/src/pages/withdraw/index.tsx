@@ -1,3 +1,15 @@
+/**
+ * 路由：/withdraw
+ *
+ * 两阶段取回资金（与合约设计一致）：
+ * 1. unstake：申请解质押，份额进入「等待期」。
+ * 2. withdraw：等待期结束后，把可领取金额真正提到钱包。
+ *
+ * withdrawAmount(Pid, user) 的返回值在本页被拆成：
+ * - pendingWithdrawAmount → 展示为「可提取」withdrawable
+ * - requestAmount 与 pending 的差 → 「处理中」withdrawPending
+ * （具体语义以合约为准；此处沿用原前端计算方式。）
+ */
 'use client'
 import { motion } from 'framer-motion';
 import { useStakeContract } from "../../hooks/useContract";
@@ -29,7 +41,7 @@ const Withdraw = () => {
   const [amount, setAmount] = useState('');
   const [unstakeLoading, setUnstakeLoading] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const { data } = useWalletClient();
+  const { data: walletClient } = useWalletClient();
   const [userData, setUserData] = useState<UserStakeData>(InitData);
 
   const isWithdrawable = useMemo(() => Number(userData.withdrawable) > 0 && isConnected, [userData, isConnected]);
@@ -37,7 +49,8 @@ const Withdraw = () => {
   const getUserData = useCallback(async () => {
     if (!stakeContract || !address) return;
     const staked = await stakeContract.read.stakingBalance([Pid, address]);
-    // @ts-ignore
+    // 合约返回结构：以 ABI 为准；此处保持与原实现一致
+    // @ts-expect-error withdrawAmount 元组类型未在 ABI 中收窄时需断言
     const [requestAmount, pendingWithdrawAmount] = await stakeContract.read.withdrawAmount([Pid, address]);
     const ava = Number(formatUnits(pendingWithdrawAmount, 18));
     const total = Number(formatUnits(requestAmount, 18));
@@ -55,7 +68,7 @@ const Withdraw = () => {
   }, [address, stakeContract, getUserData]);
 
   const handleUnStake = useCallback(async () => {
-    if (!stakeContract || !data) return;
+    if (!stakeContract || !walletClient) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -67,9 +80,7 @@ const Withdraw = () => {
     try {
       setUnstakeLoading(true);
       const tx = await stakeContract.write.unstake([Pid, parseUnits(amount, 18)]);
-      console.log('stakeContract', stakeContract)
-      console.log('Pid', Pid)
-      await waitForTransactionReceipt(data, { hash: tx });
+      await waitForTransactionReceipt(walletClient, { hash: tx });
       toast.success('Unstake successful!');
       setAmount('');
       setUnstakeLoading(false);
@@ -79,14 +90,14 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, data, amount, userData.staked, getUserData]);
+  }, [stakeContract, walletClient, amount, userData.staked, getUserData]);
 
   const handleWithdraw = useCallback(async () => {
-    if (!stakeContract || !data) return;
+    if (!stakeContract || !walletClient) return;
     try {
       setWithdrawLoading(true);
       const tx = await stakeContract.write.withdraw([Pid]);
-      await waitForTransactionReceipt(data, { hash: tx });
+      await waitForTransactionReceipt(walletClient, { hash: tx });
       toast.success('Withdraw successful!');
       setWithdrawLoading(false);
       getUserData();
@@ -95,7 +106,7 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, data, getUserData]);
+  }, [stakeContract, walletClient, getUserData]);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -126,14 +137,12 @@ const Withdraw = () => {
         transition={{ duration: 0.5, delay: 0.2 }}
         className="card"
       >
-        {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatCard label="Staked Amount" value={`${parseFloat(userData.staked).toFixed(4)} ETH`} />
           <StatCard label="Available to Withdraw" value={`${parseFloat(userData.withdrawable).toFixed(4)} ETH`} />
           <StatCard label="Pending Withdraw" value={`${parseFloat(userData.withdrawPending).toFixed(4)} ETH`} />
         </div>
 
-        {/* Unstake Section */}
         <div className="space-y-6">
           <h2 className="text-xl font-semibold">Unstake</h2>
           <div className="space-y-2">
@@ -189,7 +198,6 @@ const Withdraw = () => {
           </div>
         </div>
 
-        {/* Withdraw Section */}
         <div className="mt-12 space-y-6">
           <h2 className="text-xl font-semibold">Withdraw</h2>
 

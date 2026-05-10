@@ -1,8 +1,27 @@
+/**
+ * 首页：质押（ETH 或 ERC20）+ 同页领取奖励。
+ *
+ * 核心依赖
+ * - useStakeContract：质押合约实例
+ * - useTokenContract：当池子是 ERC20 时，对代币合约 approve
+ * - useRewards：池子与用户奖励数据
+ * - useWalletClient：发交易用的 WalletClient（viem），配合 waitForTransactionReceipt
+ * - useBalance：wagmi 封装的本币/ERC20 余额，用于校验输入与 decimals
+ *
+ * 池类型判断 isEthPool
+ * - 合约 pool() 返回的 stTokenAddress 为 0 地址时，走 depositETH 并附带 msg.value；
+ *   否则走 approve + deposit(amount)。
+ *
+ * 交易流程（ETH）
+ * 1. write.depositETH — 钱包签名广播
+ * 2. waitForTransactionReceipt — 等待上链
+ * 3. refresh / refetchBalance — 更新 UI
+ */
 'use client'
 import { motion } from 'framer-motion';
 import { useStakeContract, useTokenContract } from "../../hooks/useContract";
 import useRewards from "../../hooks/useRewards";
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Pid } from "../../utils";
 import { useAccount, useWalletClient, useBalance } from "wagmi";
 import { parseUnits, zeroAddress } from "viem";
@@ -11,7 +30,6 @@ import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { toast } from "react-toastify";
 import { waitForTransactionReceipt } from "viem/actions";
 import { FiArrowDown, FiInfo, FiZap, FiTrendingUp, FiGift } from 'react-icons/fi';
-import { cn } from '../../utils/cn';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
@@ -24,7 +42,7 @@ const Home = () => {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data } = useWalletClient();
+  const { data: walletClient } = useWalletClient();
 
   const isEthPool = useMemo(() => {
     const addr = poolData.stTokenAddress;
@@ -44,7 +62,7 @@ const Home = () => {
   });
 
   const handleStake = async () => {
-    if (!stakeContract || !data) return;
+    if (!stakeContract || !walletClient) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -63,7 +81,7 @@ const Home = () => {
 
       if (isEthPool) {
         const tx = await stakeContract.write.depositETH([], { value: amountWei });
-        const res = await waitForTransactionReceipt(data, { hash: tx });
+        const res = await waitForTransactionReceipt(walletClient, { hash: tx });
         if (res.status === 'success') {
           toast.success('Stake successful!');
           setAmount('');
@@ -78,12 +96,11 @@ const Home = () => {
           setLoading(false);
           return;
         }
-        // 处理ERC20 token 质押
         const stakeAddress = StakeContractAddress;
         const approveTx = await tokenContract.write.approve([stakeAddress, amountWei]);
-        await waitForTransactionReceipt(data, { hash: approveTx });
+        await waitForTransactionReceipt(walletClient, { hash: approveTx });
         const depositTx = await stakeContract.write.deposit([Pid, amountWei]);
-        const res = await waitForTransactionReceipt(data, { hash: depositTx });
+        const res = await waitForTransactionReceipt(walletClient, { hash: depositTx });
         if (res.status === 'success') {
           toast.success('Stake successful!');
           setAmount('');
@@ -102,17 +119,17 @@ const Home = () => {
   };
 
   const handleClaim = async () => {
-    if (!stakeContract || !data) return;
-    
+    if (!stakeContract || !walletClient) return;
+
     try {
       setClaimLoading(true);
       const tx = await stakeContract.write.claim([Pid]);
-      const res = await waitForTransactionReceipt(data, { hash: tx });
-      
+      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+
       if (res.status === 'success') {
         toast.success('Claim successful!');
         setClaimLoading(false);
-        refresh(); // 刷新奖励数据
+        refresh();
         return;
       }
       toast.error('Claim failed!');
@@ -150,10 +167,8 @@ const Home = () => {
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
-        {/* Stake Card */}
         <Card className="min-h-[420px] p-4 sm:p-8 md:p-12 bg-gradient-to-br from-gray-800/80 to-gray-900/80 shadow-2xl border-primary-500/20 border-[1.5px] rounded-2xl sm:rounded-3xl">
           <div className="space-y-8 sm:space-y-12">
-            {/* Staked Amount Display */}
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8 p-4 sm:p-8 bg-gray-800/70 rounded-xl sm:rounded-2xl border border-gray-700/50 group-hover:border-primary-500/50 transition-colors duration-300 shadow-lg">
               <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 sm:w-20 sm:h-20 bg-primary-500/10 rounded-full">
                 <FiTrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-primary-400" />
@@ -166,7 +181,6 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Input Field */}
             <div className="space-y-4 sm:space-y-6">
               <Input
                 label="Amount to Stake"
@@ -180,7 +194,6 @@ const Home = () => {
               />
             </div>
 
-            {/* Stake Button */}
             <div className="pt-4 sm:pt-8">
               {!isConnected ? (
                 <div className="flex justify-center">
@@ -204,10 +217,8 @@ const Home = () => {
           </div>
         </Card>
 
-        {/* Claim Card */}
         <Card className="min-h-[420px] p-4 sm:p-8 md:p-12 bg-gradient-to-br from-gray-800/80 to-gray-900/80 shadow-2xl border-primary-500/20 border-[1.5px] rounded-2xl sm:rounded-3xl">
           <div className="space-y-8 sm:space-y-12">
-            {/* Pending Reward Display */}
             <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8 p-4 sm:p-8 bg-gray-800/70 rounded-xl sm:rounded-2xl border border-gray-700/50 group-hover:border-primary-500/50 transition-colors duration-300 shadow-lg">
               <div className="flex-shrink-0 flex items-center justify-center w-14 h-14 sm:w-20 sm:h-20 bg-green-500/10 rounded-full">
                 <FiGift className="w-8 h-8 sm:w-10 sm:h-10 text-green-400" />
@@ -220,7 +231,6 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Info Section */}
             <div className="space-y-4 sm:space-y-6">
               <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 sm:p-6">
                 <div className="flex items-start space-x-3">
@@ -237,7 +247,6 @@ const Home = () => {
               </div>
             </div>
 
-            {/* Claim Button */}
             <div className="pt-4 sm:pt-8">
               {!isConnected ? (
                 <div className="flex justify-center">

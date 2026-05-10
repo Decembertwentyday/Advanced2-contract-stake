@@ -1,3 +1,18 @@
+/**
+ * 聚合与质押相关的「只读」链上数据，供首页、Claim 页等复用。
+ *
+ * 数据来源（合约方法）
+ * - pool(Pid)：池子配置、总质押量、stToken 地址等；stToken 为 0 地址通常表示原生 ETH 池。
+ * - user(Pid, address)：用户维度累计信息；其中 pending 奖励用于展示与 canClaim。
+ * - stakingBalance(Pid, address)：当前仍在质押的份额（与 user 内字段用途互补，以合约逻辑为准）。
+ * - MetaNode()：奖励代币合约地址，可用于 addMetaNodeToMetaMask。
+ *
+ * 刷新策略
+ * - 连接后 useEffect 拉一次；之后每 60 秒拉 rewards；页面在交易成功后可调用 refresh() 主动更新。
+ *
+ * retryWithDelay
+ * - 包装每次 RPC，降低偶发限流导致的空白数据。
+ */
 import { useCallback, useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 import { formatUnits } from 'viem';
@@ -12,9 +27,11 @@ export type RewardsData = {
   lastUpdate: number;
 };
 
-type UserData = [bigint, bigint, bigint]; // [stAmount, finishedMetaNode, pendingMetaNode]
+/** 与合约 user() 返回值顺序一致 */
+type UserData = [bigint, bigint, bigint];
 
-type PoolData = [string, bigint, bigint, bigint, bigint, bigint, bigint]; // [stTokenAddress, poolWeight, lastRewardBlock, accMetaNodePerST, stTokenAmount, minDepositAmount, unstakeLockedBlocks]
+/** 与合约 pool() 返回值顺序一致 */
+type PoolData = [string, bigint, bigint, bigint, bigint, bigint, bigint];
 
 const useRewards = () => {
   const stakeContract = useStakeContract();
@@ -38,12 +55,12 @@ const useRewards = () => {
     if (!stakeContract || !address || !isConnected) return;
 
     try {
-      const pool = await retryWithDelay(() => 
+      const pool = await retryWithDelay(() =>
         stakeContract.read.pool([Pid]) as Promise<PoolData>
       );
 
       console.log('poolInfo:::', pool);
-      
+
       setPoolData({
         poolWeight: formatUnits(pool[1] as bigint || BigInt(0), 18),
         lastRewardBlock: formatUnits(pool[2] as bigint || BigInt(0), 18),
@@ -58,15 +75,14 @@ const useRewards = () => {
     }
   }, [stakeContract, address, isConnected]);
 
-  // 获取MetaNode代币地址
   const fetchMetaNodeAddress = useCallback(async () => {
     if (!stakeContract) return;
 
     try {
-      const address = await retryWithDelay(() => 
+      const tokenAddr = await retryWithDelay(() =>
         stakeContract.read.MetaNode() as Promise<string>
       );
-      setMetaNodeAddress(address as string);
+      setMetaNodeAddress(tokenAddr as string);
     } catch (error) {
       console.error('Failed to fetch MetaNode address:', error);
     }
@@ -77,12 +93,11 @@ const useRewards = () => {
 
     try {
       setLoading(true);
-      
-      // 获取用户数据
-      const userData = await retryWithDelay(() => 
+
+      const userData = await retryWithDelay(() =>
         stakeContract.read.user([Pid, address]) as Promise<UserData>
       );
-      const stakedAmount = await retryWithDelay(() => 
+      const stakedAmount = await retryWithDelay(() =>
         stakeContract.read.stakingBalance([Pid, address]) as Promise<bigint>
       );
 
@@ -96,7 +111,6 @@ const useRewards = () => {
       });
     } catch (error) {
       console.error('Failed to fetch rewards data:', error);
-      // 设置默认值
       setRewardsData({
         pendingReward: '0',
         stakedAmount: '0',
@@ -107,7 +121,6 @@ const useRewards = () => {
     }
   }, [stakeContract, address, isConnected]);
 
-  // 初始加载
   useEffect(() => {
     if (isConnected && address) {
       fetchRewardsData();
@@ -116,23 +129,20 @@ const useRewards = () => {
     }
   }, [isConnected, address, fetchRewardsData, fetchPoolData, fetchMetaNodeAddress]);
 
-  // 定期刷新数据（每60秒）
   useEffect(() => {
     if (!isConnected || !address) return;
 
     const interval = setInterval(() => {
       fetchRewardsData();
-    }, 60000); // 60秒
+    }, 60000);
 
     return () => clearInterval(interval);
   }, [isConnected, address, fetchRewardsData]);
 
-  // 手动刷新
   const refresh = useCallback(() => {
     fetchRewardsData();
   }, [fetchRewardsData]);
 
-  // 添加MetaNode代币到MetaMask
   const addMetaNodeToWallet = useCallback(async () => {
     if (!metaNodeAddress) {
       console.error('MetaNode地址未获取到');
@@ -158,4 +168,4 @@ const useRewards = () => {
   };
 };
 
-export default useRewards; 
+export default useRewards;

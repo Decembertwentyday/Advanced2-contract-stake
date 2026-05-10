@@ -1,3 +1,16 @@
+/**
+ * 顶栏：品牌、路由导航、RainbowKit 连接按钮。
+ *
+ * 'use client'
+ * - 使用了 useState、usePathname 等浏览器端能力；在 Next 中标记为客户端组件，避免被误当成纯服务端模块。
+ *
+ * usePathname（next/navigation）
+ * - 取当前路径，用于高亮「Stake / Withdraw / Claim」。
+ * - 本项目是 Pages Router，但 Next 15 仍可在部分场景使用 navigation 里的 hook；若遇兼容问题可改回 useRouter().pathname。
+ *
+ * ConnectButton
+ * - 来自 RainbowKit：内部会调 wagmi 的连接逻辑，弹出钱包选择器。
+ */
 'use client'
 import { motion } from 'framer-motion';
 import { ConnectButton } from "@rainbow-me/rainbowkit";
@@ -10,19 +23,11 @@ import { cn } from '../utils/cn';
 const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  /** 与 pages 目录下的路由一一对应 */
   const Links = [
-    {
-      name: 'Stake',
-      path: '/'
-    },
-    {
-      name: 'Withdrawal',
-      path: '/withdraw'
-    },
-    {
-      name: 'Claim',
-      path: '/claim'
-    },
+    { name: 'Stake', path: '/' },
+    { name: 'Withdrawal', path: '/withdraw' },
+    { name: 'Claim', path: '/claim' },
   ];
 
   const pathname = usePathname();
@@ -48,7 +53,7 @@ const Header = () => {
             </Link>
           </motion.div>
 
-          {/* Desktop Navigation */}
+          {/* 桌面端：横向导航；layoutId 用于 framer-motion 下划线滑动动画 */}
           <nav className="hidden md:flex items-center space-x-6 lg:space-x-8">
             {Links.map((link) => {
               const isActive = pathname === link.path || pathname === link.path + '/';
@@ -80,10 +85,10 @@ const Header = () => {
             <div className="glow min-w-[100px] sm:min-w-[120px]">
               <ConnectButton />
             </div>
-            {/* Mobile menu button */}
             <button
               className="md:hidden p-1.5 sm:p-2 ml-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-primary-400 transition-colors duration-200"
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Open menu"
             >
               <FiMenu className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
@@ -91,7 +96,7 @@ const Header = () => {
         </div>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* 移动端：折叠菜单 */}
       <motion.div
         initial={false}
         animate={{ height: isMobileMenuOpen ? "auto" : 0 }}

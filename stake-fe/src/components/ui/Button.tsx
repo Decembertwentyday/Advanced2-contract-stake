@@ -1,3 +1,12 @@
+/**
+ * 通用按钮：封装加载态、禁用、framer-motion 点击缩放。
+ *
+ * variant
+ * - 映射到 globals.css 里的 .btn-primary 等工具类，保持全站风格一致。
+ *
+ * loading
+ * - 为 true 时禁用点击并显示转圈，防止重复提交链上交易。
+ */
 import { motion } from 'framer-motion';
 import { ReactNode } from 'react';
 import { cn } from '../../utils/cn';
@@ -56,4 +65,4 @@ export const Button = ({
       )}
     </motion.button>
   );
-}; 
+};

@@ -1,3 +1,9 @@
+/**
+ * 卡片容器：可选入场动画（framer-motion）。
+ *
+ * tech-grid
+ * - 装饰性背景网格，与 Layout 里视觉语言一致。
+ */
 import { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '../../utils/cn';
@@ -32,4 +38,4 @@ export const Card = ({ children, className, animate = true, delay = 0 }: CardPro
       {content}
     </motion.div>
   );
-}; 
+};

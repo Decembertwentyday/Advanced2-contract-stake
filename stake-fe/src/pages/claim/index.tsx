@@ -1,3 +1,11 @@
+/**
+ * 路由：/claim
+ *
+ * 专注「领取奖励」的独立页面；逻辑与首页里的 handleClaim 类似。
+ * 数据仍来自 useRewards（与首页共享同一套链上读逻辑）。
+ *
+ * 流程：write.claim([Pid]) → waitForTransactionReceipt → refresh 更新 pending 奖励显示。
+ */
 'use client'
 import { motion } from 'framer-motion';
 import { useStakeContract } from "../../hooks/useContract";
@@ -15,25 +23,25 @@ import { Card } from '../../components/ui/Card';
 
 const Claim = () => {
   const stakeContract = useStakeContract();
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
   const { rewardsData, canClaim, refresh } = useRewards();
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data } = useWalletClient();
+  const { data: walletClient } = useWalletClient();
 
   const handleClaim = useCallback(async () => {
-    if (!stakeContract || !data) return;
-    
+    if (!stakeContract || !walletClient) return;
+
     try {
       setClaimLoading(true);
       const tx = await stakeContract.write.claim([Pid]);
       console.log(tx, '===tx===');
-      
-      const res = await waitForTransactionReceipt(data, { hash: tx });
-      
+
+      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+
       if (res.status === 'success') {
         toast.success('Claim successful!');
         setClaimLoading(false);
-        refresh(); // 刷新数据
+        refresh();
         return;
       }
       toast.error('Claim failed!');
@@ -42,9 +50,7 @@ const Claim = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'claim-error');
     }
-  }, [stakeContract, data, refresh]);
-
-
+  }, [stakeContract, walletClient, refresh]);
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -73,12 +79,10 @@ const Claim = () => {
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Reward Stats Card */}
         <Card className="p-6 sm:p-8 bg-gradient-to-br from-gray-800/80 to-gray-900/80 shadow-2xl border-green-500/20 border-[1.5px] rounded-2xl">
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-green-400 mb-6">Reward Statistics</h2>
-            
-            {/* Pending Rewards */}
+
             <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -91,7 +95,6 @@ const Claim = () => {
               </div>
             </div>
 
-            {/* Staked Amount */}
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -104,7 +107,6 @@ const Claim = () => {
               </div>
             </div>
 
-            {/* Last Update */}
             <div className="bg-purple-500/10 border border-purple-500/20 rounded-xl p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -119,12 +121,10 @@ const Claim = () => {
           </div>
         </Card>
 
-        {/* Claim Action Card */}
         <Card className="p-6 sm:p-8 bg-gradient-to-br from-gray-800/80 to-gray-900/80 shadow-2xl border-green-500/20 border-[1.5px] rounded-2xl">
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-green-400 mb-6">Claim Rewards</h2>
-            
-            {/* Info Section */}
+
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-6">
               <div className="flex items-start space-x-3">
                 <FiInfo className="w-5 h-5 text-blue-400 mt-0.5 flex-shrink-0" />
@@ -140,11 +140,10 @@ const Claim = () => {
               </div>
             </div>
 
-            {/* Claim Status */}
             <div className={cn(
               "rounded-xl p-6 border",
-              canClaim 
-                ? "bg-green-500/10 border-green-500/20" 
+              canClaim
+                ? "bg-green-500/10 border-green-500/20"
                 : "bg-gray-500/10 border-gray-500/20"
             )}>
               <div className="flex items-center justify-between">
@@ -167,7 +166,6 @@ const Claim = () => {
               </div>
             </div>
 
-            {/* Claim Button */}
             <div className="pt-4">
               {!isConnected ? (
                 <div className="flex justify-center">
@@ -191,7 +189,6 @@ const Claim = () => {
               )}
             </div>
 
-            {/* Additional Info */}
             {!canClaim && isConnected && (
               <div className="text-center text-gray-400 text-sm">
                 <p>Start staking ETH to earn MetaNode rewards!</p>
@@ -201,7 +198,6 @@ const Claim = () => {
         </Card>
       </div>
 
-      {/* Reward History Section */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -221,4 +217,4 @@ const Claim = () => {
   );
 };
 
-export default Claim; 
+export default Claim;

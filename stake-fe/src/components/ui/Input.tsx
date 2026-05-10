@@ -1,3 +1,9 @@
+/**
+ * 带标签、错误/辅助文案、右侧插槽的输入框。
+ *
+ * forwardRef
+ * - 若父组件需要 focus() 或 react-hook-form 注册 ref，必须转发到原生 input。
+ */
 import { InputHTMLAttributes, forwardRef } from 'react';
 import { cn } from '../../utils/cn';
 
@@ -46,4 +52,6 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       </div>
     );
   }
-); 
+);
+
+Input.displayName = 'Input';

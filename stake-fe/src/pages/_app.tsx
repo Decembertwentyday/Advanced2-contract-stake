@@ -1,3 +1,22 @@
+/**
+ * Next.js Pages Router 的全局应用入口（对应 App Router 里的 root layout）。
+ *
+ * 为什么需要 _app.tsx？
+ * - 每个具体页面（index、withdraw、claim）只负责自己的 UI；公共的「包一层 Provider、统一布局、全局样式」都放在这里。
+ * - Next.js 会把当前路由对应的页面组件作为 Component 传进来，见下方 <Component {...pageProps} />。
+ *
+ * Provider 嵌套顺序（从外到内）与原理：
+ * 1. ThemeProvider（MUI）
+ *    - 若页面里用到 @mui/material 组件，它们会消费这份 theme（颜色、字体等）。
+ * 2. WagmiProvider
+ *    - 注入 wagmi 的 config（链、RPC transport 等）。所有 useAccount、useWalletClient、useBalance 必须在它的子树里。
+ * 3. QueryClientProvider
+ *    - wagmi v2 内部用 TanStack Query 做请求缓存与去重；必须与 WagmiProvider 搭配使用（顺序按官方示例：在 Wagmi 内层）。
+ * 4. RainbowKitProvider
+ *    - 连接钱包 UI（ConnectButton）依赖 wagmi 上下文，因此要放在 WagmiProvider 内部。
+ *
+ * 读完本文件后，建议接着看：pages/index.tsx → components/Layout.tsx → utils/wagmi.ts
+ */
 import '../styles/globals.css';
 import '@rainbow-me/rainbowkit/styles.css';
 import type { AppProps } from 'next/app';
@@ -12,6 +31,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import Head from 'next/head';
 import Layout from '../components/Layout';
 
+/** 整个应用共用一个 QueryClient，避免重复创建导致缓存失效 */
 const client = new QueryClient();
 
 function MyApp({ Component, pageProps }: AppProps) {
@@ -28,7 +48,11 @@ function MyApp({ Component, pageProps }: AppProps) {
       <ThemeProvider theme={theme}>
         <WagmiProvider config={config}>
           <QueryClientProvider client={client}>
-            <RainbowKitProvider locale='en-US'>
+            <RainbowKitProvider locale="en-US">
+              {/*
+                ToastContainer：全局挂载一次即可，任意子组件里调用 toast.success/error 都会显示。
+                仅保留类型支持的 props（react-toastify v11 部分 className 子项已变更）。
+              */}
               <ToastContainer
                 position="top-right"
                 autoClose={3000}
@@ -41,16 +65,18 @@ function MyApp({ Component, pageProps }: AppProps) {
                 pauseOnHover
                 theme="light"
                 toastClassName="custom-toast"
-                bodyClassName="custom-toast-body"
-                progressClassName="custom-toast-progress"
               />
-              <Layout><Component {...pageProps} /></Layout>
+              {/*
+                Layout 提供顶栏、页脚、背景；children 区域渲染当前路由页面。
+              */}
+              <Layout>
+                <Component {...pageProps} />
+              </Layout>
             </RainbowKitProvider>
           </QueryClientProvider>
         </WagmiProvider>
       </ThemeProvider>
     </>
-
   );
 }
 
