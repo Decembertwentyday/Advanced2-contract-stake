@@ -15,11 +15,12 @@ import { motion } from 'framer-motion';
 import { useStakeContract } from "../../hooks/useContract";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pid } from "../../utils";
-import { useAccount, useWalletClient } from "wagmi";
-import { formatUnits, parseUnits } from "viem";
+import { useAccount } from "wagmi";
+import { formatUnits, parseUnits } from "ethers";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { waitForTransactionReceipt } from "viem/actions";
 import { toast } from "react-toastify";
+import { stakeWithSigner } from "../../utils/stakeContractConnect";
+import { useEthersSigner } from "../../utils/wagmiEthersAdapter";
 import { FiArrowUp, FiClock, FiInfo } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 
@@ -41,17 +42,15 @@ const Withdraw = () => {
   const [amount, setAmount] = useState('');
   const [unstakeLoading, setUnstakeLoading] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
+  const signer = useEthersSigner();
   const [userData, setUserData] = useState<UserStakeData>(InitData);
 
   const isWithdrawable = useMemo(() => Number(userData.withdrawable) > 0 && isConnected, [userData, isConnected]);
 
   const getUserData = useCallback(async () => {
     if (!stakeContract || !address) return;
-    const staked = await stakeContract.read.stakingBalance([Pid, address]);
-    // 合约返回结构：以 ABI 为准；此处保持与原实现一致
-    // @ts-expect-error withdrawAmount 元组类型未在 ABI 中收窄时需断言
-    const [requestAmount, pendingWithdrawAmount] = await stakeContract.read.withdrawAmount([Pid, address]);
+    const staked = await stakeContract.stakingBalance(Pid, address);
+    const [requestAmount, pendingWithdrawAmount] = await stakeContract.withdrawAmount(Pid, address);
     const ava = Number(formatUnits(pendingWithdrawAmount, 18));
     const total = Number(formatUnits(requestAmount, 18));
     setUserData({
@@ -68,7 +67,7 @@ const Withdraw = () => {
   }, [address, stakeContract, getUserData]);
 
   const handleUnStake = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -79,8 +78,8 @@ const Withdraw = () => {
     }
     try {
       setUnstakeLoading(true);
-      const tx = await stakeContract.write.unstake([Pid, parseUnits(amount, 18)]);
-      await waitForTransactionReceipt(walletClient, { hash: tx });
+      const tx = await stakeWithSigner(stakeContract, signer).unstake(Pid, parseUnits(amount, 18));
+      await tx.wait();
       toast.success('Unstake successful!');
       setAmount('');
       setUnstakeLoading(false);
@@ -90,14 +89,14 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, walletClient, amount, userData.staked, getUserData]);
+  }, [stakeContract, signer, amount, userData.staked, getUserData]);
 
   const handleWithdraw = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     try {
       setWithdrawLoading(true);
-      const tx = await stakeContract.write.withdraw([Pid]);
-      await waitForTransactionReceipt(walletClient, { hash: tx });
+      const tx = await stakeWithSigner(stakeContract, signer).withdraw(Pid);
+      await tx.wait();
       toast.success('Withdraw successful!');
       setWithdrawLoading(false);
       getUserData();
@@ -106,7 +105,7 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, walletClient, getUserData]);
+  }, [stakeContract, signer, getUserData]);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;

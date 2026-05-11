@@ -9,7 +9,7 @@
  *
  * transports[chainId]
  * - 告诉 wagmi：该链的 JSON-RPC 走哪条 HTTP（或 WebSocket）。
- * - 读操作、部分 wagmi 内部请求会用到；与 viem 里 PublicClient 使用同一套 sepoliaTransport 可减少「读用 A、模拟用 B」的不一致。
+ * - 读操作、部分 wagmi 内部请求会用到；与 `wagmiEthersAdapter` / `useClient` 映射出的 ethers Provider 使用同一套 transport，可减少「钱包侧与公开读侧 RPC 不一致」带来的疑难问题。
  *
  * ssr: true
  * - Next.js 会在服务端先渲染一版 HTML；设为 true 时 wagmi 会避免在服务端错误地访问 window。

@@ -14,8 +14,8 @@
  * - 包装每次 RPC，降低偶发限流导致的空白数据。
  */
 import { useCallback, useEffect, useState } from 'react';
+import { formatUnits } from 'ethers';
 import { useAccount } from 'wagmi';
-import { formatUnits } from 'viem';
 import { useStakeContract } from './useContract';
 import { Pid } from '../utils';
 import { addMetaNodeToMetaMask } from '../utils/metamask';
@@ -39,14 +39,14 @@ const useRewards = () => {
   const [rewardsData, setRewardsData] = useState<RewardsData>({
     pendingReward: '0',
     stakedAmount: '0',
-    lastUpdate: 0
+    lastUpdate: 0,
   });
   const [loading, setLoading] = useState(false);
 
   const [poolData, setPoolData] = useState<Record<string, string>>({
     poolWeight: '0',
     lastRewardBlock: '0',
-    accMetaNodePerShare: '0'
+    accMetaNodePerShare: '0',
   });
 
   const [metaNodeAddress, setMetaNodeAddress] = useState<string>('');
@@ -55,9 +55,7 @@ const useRewards = () => {
     if (!stakeContract || !address || !isConnected) return;
 
     try {
-      const pool = await retryWithDelay(() =>
-        stakeContract.read.pool([Pid]) as Promise<PoolData>
-      );
+      const pool = (await retryWithDelay(() => stakeContract.pool(Pid))) as PoolData;
 
       console.log('poolInfo:::', pool);
 
@@ -68,7 +66,7 @@ const useRewards = () => {
         stTokenAmount: formatUnits(pool[4] as bigint || BigInt(0), 18),
         minDepositAmount: formatUnits(pool[5] as bigint || BigInt(0), 18),
         unstakeLockedBlocks: formatUnits(pool[6] as bigint || BigInt(0), 18),
-        stTokenAddress: pool[0] as string
+        stTokenAddress: pool[0] as string,
       });
     } catch (error) {
       console.error('Failed to fetch pool data:', error);
@@ -79,9 +77,7 @@ const useRewards = () => {
     if (!stakeContract) return;
 
     try {
-      const tokenAddr = await retryWithDelay(() =>
-        stakeContract.read.MetaNode() as Promise<string>
-      );
+      const tokenAddr = await retryWithDelay(() => stakeContract.MetaNode() as Promise<string>);
       setMetaNodeAddress(tokenAddr as string);
     } catch (error) {
       console.error('Failed to fetch MetaNode address:', error);
@@ -94,12 +90,12 @@ const useRewards = () => {
     try {
       setLoading(true);
 
-      const userData = await retryWithDelay(() =>
-        stakeContract.read.user([Pid, address]) as Promise<UserData>
-      );
-      const stakedAmount = await retryWithDelay(() =>
-        stakeContract.read.stakingBalance([Pid, address]) as Promise<bigint>
-      );
+      const userData = (await retryWithDelay(() =>
+        stakeContract.user(Pid, address),
+      )) as UserData;
+      const stakedAmount = (await retryWithDelay(() =>
+        stakeContract.stakingBalance(Pid, address),
+      )) as bigint;
 
       console.log('User data:', userData);
       console.log('Staked amount:', stakedAmount);
@@ -107,14 +103,14 @@ const useRewards = () => {
       setRewardsData({
         pendingReward: formatUnits(userData[2] || BigInt(0), 18),
         stakedAmount: formatUnits(stakedAmount as bigint || BigInt(0), 18),
-        lastUpdate: Date.now()
+        lastUpdate: Date.now(),
       });
     } catch (error) {
       console.error('Failed to fetch rewards data:', error);
       setRewardsData({
         pendingReward: '0',
         stakedAmount: '0',
-        lastUpdate: Date.now()
+        lastUpdate: Date.now(),
       });
     } finally {
       setLoading(false);
@@ -164,7 +160,7 @@ const useRewards = () => {
     metaNodeAddress,
     refresh,
     addMetaNodeToWallet,
-    canClaim: parseFloat(rewardsData.pendingReward) > 0
+    canClaim: parseFloat(rewardsData.pendingReward) > 0,
   };
 };
 

@@ -1,44 +1,27 @@
 /**
- * 用 viem 封装「合约实例」工厂，供 React hooks 调用。
+ * 用 ethers v6 封装「合约实例」工厂，供 React hooks 调用。
  *
- * 双客户端模型（核心）
- * - public：HTTP PublicClient（见 viem.ts）。负责 eth_call 类请求：read、估算、模拟。
- * - wallet：wagmi 提供的 WalletClient（用户钱包）。负责 eth_sendRawTransaction：write、签名。
+ * ContractRunner（核心）
+ * - **Signer**：来自 `useEthersSigner`（已连接钱包）。只有 runner 为 Signer 时才能 **发交易**（`deposit`、`claim` 等）。
+ * - **Provider**：来自 `useEthersProvider` 的只读映射，或 `getSepoliaReadOnlyProvider()` 的 HTTP fallback。
+ *   只能 **eth_call / 读视图函数**；若误用 Provider 实例去发交易，ethers 会报错或行为不符合预期。
  *
- * 为什么 write 也会受 public RPC 影响？
- * - viem 在发交易前常做 simulate/estimate，会向 RPC 发只读请求；public 挂了则 write 在弹窗前就失败。
- *
- * getContract 返回的对象上：
- * - .read.xxx()  只读
- * - .write.xxx() 需 wallet 已连接且 signer 存在
+ * 与旧版 viem 双 client 的对应关系
+ * - 原 `public` + `wallet` 合并为「一个 Contract + 一个 runner」：连接时用 Signer（读写皆可），
+ *   断连时用只读 Provider 保持与产品一致的池子展示（若不需要断连读，可收窄为仅 Signer）。
  */
-import { Abi, Address, GetContractReturnType, PublicClient, WalletClient, getContract as viemGetContract } from "viem";
-import { defaultChainId } from './wagmi';
-import { viemClients } from "./viem";
+import { Contract, ContractRunner, InterfaceAbi, getAddress, isAddress } from 'ethers';
 
-export const getContract = <TAbi extends Abi | readonly unknown[], TWalletClient extends WalletClient>({
-  abi,
-  address,
-  chainId = defaultChainId,
-  signer,
-}: {
-  abi: TAbi | readonly unknown[];
-  address: Address;
-  chainId?: number;
-  signer?: TWalletClient;
-}) => {
-  const c = viemGetContract({
-    abi,
-    address,
-    client: {
-      public: viemClients(chainId),
-      wallet: signer,
-    },
-  }) as unknown as GetContractReturnType<TAbi, PublicClient, Address>;
-
-  return {
-    ...c,
-    account: signer?.account,
-    chain: signer?.chain,
-  };
-};
+export function createEthersContract(
+  address: string,
+  abi: readonly unknown[],
+  runner: ContractRunner,
+): Contract | null {
+  if (!address || !isAddress(address)) return null;
+  try {
+    return new Contract(getAddress(address), abi as InterfaceAbi, runner);
+  } catch (e) {
+    console.error('createEthersContract failed', e);
+    return null;
+  }
+}

@@ -2,10 +2,10 @@
  * 首页：质押（ETH 或 ERC20）+ 同页领取奖励。
  *
  * 核心依赖
- * - useStakeContract：质押合约实例
+ * - useStakeContract：ethers `Contract`（runner 为 Signer 或只读 Provider）
  * - useTokenContract：当池子是 ERC20 时，对代币合约 approve
  * - useRewards：池子与用户奖励数据
- * - useWalletClient：发交易用的 WalletClient（viem），配合 waitForTransactionReceipt
+ * - useEthersSigner：发交易用的 Signer；与 `Contract` 组合后 `depositETH` / `deposit` 等返回 `tx.wait()` 可等待的响应
  * - useBalance：wagmi 封装的本币/ERC20 余额，用于校验输入与 decimals
  *
  * 池类型判断 isEthPool
@@ -13,22 +13,22 @@
  *   否则走 approve + deposit(amount)。
  *
  * 交易流程（ETH）
- * 1. write.depositETH — 钱包签名广播
- * 2. waitForTransactionReceipt — 等待上链
+ * 1. depositETH({ value }) — 钱包签名广播
+ * 2. tx.wait() — 等待上链
  * 3. refresh / refetchBalance — 更新 UI
  */
 'use client'
 import { motion } from 'framer-motion';
-import { useStakeContract, useTokenContract } from "../../hooks/useContract";
+import { useStakeContract, useTokenContract, type HexAddress } from "../../hooks/useContract";
 import useRewards from "../../hooks/useRewards";
 import { useMemo, useState } from "react";
 import { Pid } from "../../utils";
-import { useAccount, useWalletClient, useBalance } from "wagmi";
-import { parseUnits, zeroAddress } from "viem";
-import type { Address } from "viem";
+import { useAccount, useBalance } from "wagmi";
+import { ZeroAddress, parseUnits } from "ethers";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { toast } from "react-toastify";
-import { waitForTransactionReceipt } from "viem/actions";
+import { erc20WithSigner, stakeWithSigner } from "../../utils/stakeContractConnect";
+import { useEthersSigner } from "../../utils/wagmiEthersAdapter";
 import { FiArrowDown, FiInfo, FiZap, FiTrendingUp, FiGift } from 'react-icons/fi';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -42,18 +42,18 @@ const Home = () => {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
+  const signer = useEthersSigner();
 
   const isEthPool = useMemo(() => {
     const addr = poolData.stTokenAddress;
-    return !addr || addr === zeroAddress || addr === '0x0000000000000000000000000000000000000000';
+    return !addr || addr === ZeroAddress || addr === '0x0000000000000000000000000000000000000000';
   }, [poolData.stTokenAddress]);
 
-  const tokenContract = useTokenContract(poolData.stTokenAddress as Address | undefined);
+  const tokenContract = useTokenContract(poolData.stTokenAddress as HexAddress | undefined);
 
   const { data: balance, refetch: refetchBalance } = useBalance({
     address: address,
-    token: isEthPool ? undefined : (poolData.stTokenAddress as Address | undefined),
+    token: isEthPool ? undefined : (poolData.stTokenAddress as HexAddress | undefined),
     query: {
       enabled: isConnected && (isEthPool || !!poolData.stTokenAddress),
       refetchInterval: 10000,
@@ -62,7 +62,7 @@ const Home = () => {
   });
 
   const handleStake = async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -80,9 +80,9 @@ const Home = () => {
       setLoading(true);
 
       if (isEthPool) {
-        const tx = await stakeContract.write.depositETH([], { value: amountWei });
-        const res = await waitForTransactionReceipt(walletClient, { hash: tx });
-        if (res.status === 'success') {
+        const tx = await stakeWithSigner(stakeContract, signer).depositETH({ value: amountWei });
+        const res = await tx.wait();
+        if (res?.status === 1) {
           toast.success('Stake successful!');
           setAmount('');
           refetchBalance?.();
@@ -97,11 +97,11 @@ const Home = () => {
           return;
         }
         const stakeAddress = StakeContractAddress;
-        const approveTx = await tokenContract.write.approve([stakeAddress, amountWei]);
-        await waitForTransactionReceipt(walletClient, { hash: approveTx });
-        const depositTx = await stakeContract.write.deposit([Pid, amountWei]);
-        const res = await waitForTransactionReceipt(walletClient, { hash: depositTx });
-        if (res.status === 'success') {
+        const approveTx = await erc20WithSigner(tokenContract, signer).approve(stakeAddress, amountWei);
+        await approveTx.wait();
+        const depositTx = await stakeWithSigner(stakeContract, signer).deposit(Pid, amountWei);
+        const res = await depositTx.wait();
+        if (res?.status === 1) {
           toast.success('Stake successful!');
           setAmount('');
           refetchBalance?.();
@@ -119,14 +119,14 @@ const Home = () => {
   };
 
   const handleClaim = async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
 
     try {
       setClaimLoading(true);
-      const tx = await stakeContract.write.claim([Pid]);
-      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+      const tx = await stakeWithSigner(stakeContract, signer).claim(Pid);
+      const res = await tx.wait();
 
-      if (res.status === 'success') {
+      if (res?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
         refresh();

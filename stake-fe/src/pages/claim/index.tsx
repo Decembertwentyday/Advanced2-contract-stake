@@ -4,7 +4,7 @@
  * 专注「领取奖励」的独立页面；逻辑与首页里的 handleClaim 类似。
  * 数据仍来自 useRewards（与首页共享同一套链上读逻辑）。
  *
- * 流程：write.claim([Pid]) → waitForTransactionReceipt → refresh 更新 pending 奖励显示。
+ * 流程：claim(Pid) → tx.wait() → refresh 更新 pending 奖励显示。
  */
 'use client'
 import { motion } from 'framer-motion';
@@ -12,10 +12,11 @@ import { useStakeContract } from "../../hooks/useContract";
 import useRewards from "../../hooks/useRewards";
 import { useCallback, useState } from "react";
 import { Pid } from "../../utils";
-import { useAccount, useWalletClient } from "wagmi";
+import { useAccount } from "wagmi";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { waitForTransactionReceipt } from "viem/actions";
 import { toast } from "react-toastify";
+import { stakeWithSigner } from "../../utils/stakeContractConnect";
+import { useEthersSigner } from "../../utils/wagmiEthersAdapter";
 import { FiGift, FiInfo, FiTrendingUp, FiClock, FiZap } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { Button } from '../../components/ui/Button';
@@ -26,19 +27,19 @@ const Claim = () => {
   const { isConnected } = useAccount();
   const { rewardsData, canClaim, refresh } = useRewards();
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
+  const signer = useEthersSigner();
 
   const handleClaim = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
 
     try {
       setClaimLoading(true);
-      const tx = await stakeContract.write.claim([Pid]);
+      const tx = await stakeWithSigner(stakeContract, signer).claim(Pid);
       console.log(tx, '===tx===');
 
-      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+      const res = await tx.wait();
 
-      if (res.status === 'success') {
+      if (res?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
         refresh();
@@ -50,7 +51,7 @@ const Claim = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'claim-error');
     }
-  }, [stakeContract, walletClient, refresh]);
+  }, [stakeContract, signer, refresh]);
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
