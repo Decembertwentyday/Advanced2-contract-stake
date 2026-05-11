@@ -1,27 +1,16 @@
-/**
- * 路由：/withdraw
- *
- * 两阶段取回资金（与合约设计一致）：
- * 1. unstake：申请解质押，份额进入「等待期」。
- * 2. withdraw：等待期结束后，把可领取金额真正提到钱包。
- *
- * withdrawAmount(Pid, user) 的返回值在本页被拆成：
- * - pendingWithdrawAmount → 展示为「可提取」withdrawable
- * - requestAmount 与 pending 的差 → 「处理中」withdrawPending
- * （具体语义以合约为准；此处沿用原前端计算方式。）
- */
-'use client'
+'use client';
+
 import { motion } from 'framer-motion';
-import { useStakeContract } from "../../hooks/useContract";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pid } from "../../utils";
-import { useAccount, useWalletClient } from "wagmi";
-import { formatUnits, parseUnits } from "viem";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { waitForTransactionReceipt } from "viem/actions";
-import { toast } from "react-toastify";
+import { useStakeContract } from '../../hooks/useContract';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pid } from '../../utils';
+import { useWeb3 } from '../../providers/Web3Provider';
+import { formatUnits, parseUnits } from 'ethers';
+import { toast } from 'react-toastify';
 import { FiArrowUp, FiClock, FiInfo } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
+import { WalletConnectPrompt } from '../../components/WalletConnectPrompt';
+import { connectWithSigner } from '../../utils/connectWithSigner';
 
 export type UserStakeData = {
   staked: string;
@@ -32,32 +21,35 @@ export type UserStakeData = {
 const InitData: UserStakeData = {
   staked: '0',
   withdrawable: '0',
-  withdrawPending: '0'
+  withdrawPending: '0',
 };
 
 const Withdraw = () => {
   const stakeContract = useStakeContract();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, signer } = useWeb3();
   const [amount, setAmount] = useState('');
   const [unstakeLoading, setUnstakeLoading] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
   const [userData, setUserData] = useState<UserStakeData>(InitData);
 
-  const isWithdrawable = useMemo(() => Number(userData.withdrawable) > 0 && isConnected, [userData, isConnected]);
+  const isWithdrawable = useMemo(
+    () => Number(userData.withdrawable) > 0 && isConnected,
+    [userData, isConnected]
+  );
 
   const getUserData = useCallback(async () => {
     if (!stakeContract || !address) return;
-    const staked = await stakeContract.read.stakingBalance([Pid, address]);
-    // 合约返回结构：以 ABI 为准；此处保持与原实现一致
-    // @ts-expect-error withdrawAmount 元组类型未在 ABI 中收窄时需断言
-    const [requestAmount, pendingWithdrawAmount] = await stakeContract.read.withdrawAmount([Pid, address]);
+    const staked = await stakeContract.stakingBalance(Pid, address);
+    const [requestAmount, pendingWithdrawAmount] = await stakeContract.withdrawAmount(
+      Pid,
+      address
+    );
     const ava = Number(formatUnits(pendingWithdrawAmount, 18));
     const total = Number(formatUnits(requestAmount, 18));
     setUserData({
-      staked: formatUnits(staked as bigint, 18),
+      staked: formatUnits(staked, 18),
       withdrawPending: (total - ava).toFixed(4),
-      withdrawable: ava.toString()
+      withdrawable: ava.toString(),
     });
   }, [stakeContract, address]);
 
@@ -68,7 +60,7 @@ const Withdraw = () => {
   }, [address, stakeContract, getUserData]);
 
   const handleUnStake = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -79,8 +71,9 @@ const Withdraw = () => {
     }
     try {
       setUnstakeLoading(true);
-      const tx = await stakeContract.write.unstake([Pid, parseUnits(amount, 18)]);
-      await waitForTransactionReceipt(walletClient, { hash: tx });
+      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+      const tx = await stakeWithSigner.unstake(Pid, parseUnits(amount, 18));
+      await tx.wait();
       toast.success('Unstake successful!');
       setAmount('');
       setUnstakeLoading(false);
@@ -90,14 +83,15 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, walletClient, amount, userData.staked, getUserData]);
+  }, [stakeContract, signer, amount, userData.staked, getUserData]);
 
   const handleWithdraw = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     try {
       setWithdrawLoading(true);
-      const tx = await stakeContract.write.withdraw([Pid]);
-      await waitForTransactionReceipt(walletClient, { hash: tx });
+      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+      const tx = await stakeWithSigner.withdraw(Pid);
+      await tx.wait();
       toast.success('Withdraw successful!');
       setWithdrawLoading(false);
       getUserData();
@@ -106,7 +100,7 @@ const Withdraw = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'stake-error');
     }
-  }, [stakeContract, walletClient, getUserData]);
+  }, [stakeContract, signer, getUserData]);
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -126,9 +120,7 @@ const Withdraw = () => {
         <h1 className="text-4xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent mb-4">
           Withdraw
         </h1>
-        <p className="text-gray-600 text-lg">
-          Unstake and withdraw your ETH
-        </p>
+        <p className="text-gray-600 text-lg">Unstake and withdraw your ETH</p>
       </motion.div>
 
       <motion.div
@@ -139,8 +131,14 @@ const Withdraw = () => {
       >
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <StatCard label="Staked Amount" value={`${parseFloat(userData.staked).toFixed(4)} ETH`} />
-          <StatCard label="Available to Withdraw" value={`${parseFloat(userData.withdrawable).toFixed(4)} ETH`} />
-          <StatCard label="Pending Withdraw" value={`${parseFloat(userData.withdrawPending).toFixed(4)} ETH`} />
+          <StatCard
+            label="Available to Withdraw"
+            value={`${parseFloat(userData.withdrawable).toFixed(4)} ETH`}
+          />
+          <StatCard
+            label="Pending Withdraw"
+            value={`${parseFloat(userData.withdrawPending).toFixed(4)} ETH`}
+          />
         </div>
 
         <div className="space-y-6">
@@ -156,8 +154,8 @@ const Withdraw = () => {
                 onChange={handleAmountChange}
                 placeholder="0.0"
                 className={cn(
-                  "input-field pr-12",
-                  "focus:ring-primary-500 focus:border-primary-500"
+                  'input-field pr-12',
+                  'focus:ring-primary-500 focus:border-primary-500'
                 )}
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">
@@ -169,7 +167,7 @@ const Withdraw = () => {
           <div className="pt-4">
             {!isConnected ? (
               <div className="flex justify-center">
-                <ConnectButton />
+                <WalletConnectPrompt />
               </div>
             ) : (
               <motion.button
@@ -178,8 +176,8 @@ const Withdraw = () => {
                 onClick={handleUnStake}
                 disabled={unstakeLoading || !amount}
                 className={cn(
-                  "btn-primary w-full flex items-center justify-center space-x-2",
-                  unstakeLoading && "opacity-70 cursor-not-allowed"
+                  'btn-primary w-full flex items-center justify-center space-x-2',
+                  unstakeLoading && 'opacity-70 cursor-not-allowed'
                 )}
               >
                 {unstakeLoading ? (
@@ -227,8 +225,8 @@ const Withdraw = () => {
             onClick={handleWithdraw}
             disabled={!isWithdrawable || withdrawLoading}
             className={cn(
-              "btn-primary w-full flex items-center justify-center space-x-2",
-              (!isWithdrawable || withdrawLoading) && "opacity-70 cursor-not-allowed"
+              'btn-primary w-full flex items-center justify-center space-x-2',
+              (!isWithdrawable || withdrawLoading) && 'opacity-70 cursor-not-allowed'
             )}
           >
             {withdrawLoading ? (

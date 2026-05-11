@@ -1,68 +1,53 @@
 /**
- * 首页：质押（ETH 或 ERC20）+ 同页领取奖励。
- *
- * 核心依赖
- * - useStakeContract：质押合约实例
- * - useTokenContract：当池子是 ERC20 时，对代币合约 approve
- * - useRewards：池子与用户奖励数据
- * - useWalletClient：发交易用的 WalletClient（viem），配合 waitForTransactionReceipt
- * - useBalance：wagmi 封装的本币/ERC20 余额，用于校验输入与 decimals
- *
- * 池类型判断 isEthPool
- * - 合约 pool() 返回的 stTokenAddress 为 0 地址时，走 depositETH 并附带 msg.value；
- *   否则走 approve + deposit(amount)。
- *
- * 交易流程（ETH）
- * 1. write.depositETH — 钱包签名广播
- * 2. waitForTransactionReceipt — 等待上链
- * 3. refresh / refetchBalance — 更新 UI
+ * 首页：质押（ETH 或 ERC20）+ 领取奖励（ethers + Web3Provider）。
  */
-'use client'
+'use client';
+
 import { motion } from 'framer-motion';
-import { useStakeContract, useTokenContract } from "../../hooks/useContract";
-import useRewards from "../../hooks/useRewards";
-import { useMemo, useState } from "react";
-import { Pid } from "../../utils";
-import { useAccount, useWalletClient, useBalance } from "wagmi";
-import { parseUnits, zeroAddress } from "viem";
-import type { Address } from "viem";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { toast } from "react-toastify";
-import { waitForTransactionReceipt } from "viem/actions";
+import { useStakeContract, useTokenContract } from '../../hooks/useContract';
+import useRewards from '../../hooks/useRewards';
+import { useWalletBalance } from '../../hooks/useWalletBalance';
+import { useMemo, useState } from 'react';
+import { Pid } from '../../utils';
+import { useWeb3 } from '../../providers/Web3Provider';
+import { parseUnits, ZeroAddress } from 'ethers';
+import { toast } from 'react-toastify';
 import { FiArrowDown, FiInfo, FiZap, FiTrendingUp, FiGift } from 'react-icons/fi';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Card } from '../../components/ui/Card';
-import { StakeContractAddress } from "../../utils/env";
+import { StakeContractAddress } from '../../utils/env';
+import { WalletConnectPrompt } from '../../components/WalletConnectPrompt';
+import { connectWithSigner } from '../../utils/connectWithSigner';
 
 const Home = () => {
   const stakeContract = useStakeContract();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, signer } = useWeb3();
   const { rewardsData, poolData, canClaim, refresh } = useRewards();
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
 
   const isEthPool = useMemo(() => {
     const addr = poolData.stTokenAddress;
-    return !addr || addr === zeroAddress || addr === '0x0000000000000000000000000000000000000000';
+    return (
+      !addr ||
+      addr === ZeroAddress ||
+      addr === '0x0000000000000000000000000000000000000000'
+    );
   }, [poolData.stTokenAddress]);
 
-  const tokenContract = useTokenContract(poolData.stTokenAddress as Address | undefined);
+  const tokenContract = useTokenContract(poolData.stTokenAddress);
 
-  const { data: balance, refetch: refetchBalance } = useBalance({
-    address: address,
-    token: isEthPool ? undefined : (poolData.stTokenAddress as Address | undefined),
-    query: {
-      enabled: isConnected && (isEthPool || !!poolData.stTokenAddress),
-      refetchInterval: 10000,
-      refetchIntervalInBackground: false,
-    }
+  const { data: balance, refetch: refetchBalance } = useWalletBalance({
+    address,
+    tokenAddress: poolData.stTokenAddress,
+    isEth: isEthPool,
+    enabled: isConnected && (isEthPool || !!poolData.stTokenAddress),
   });
 
   const handleStake = async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
@@ -79,13 +64,15 @@ const Home = () => {
     try {
       setLoading(true);
 
+      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+
       if (isEthPool) {
-        const tx = await stakeContract.write.depositETH([], { value: amountWei });
-        const res = await waitForTransactionReceipt(walletClient, { hash: tx });
-        if (res.status === 'success') {
+        const tx = await stakeWithSigner.depositETH({ value: amountWei });
+        const receipt = await tx.wait();
+        if (receipt?.status === 1) {
           toast.success('Stake successful!');
           setAmount('');
-          refetchBalance?.();
+          refetchBalance();
           refresh();
           return;
         }
@@ -97,14 +84,15 @@ const Home = () => {
           return;
         }
         const stakeAddress = StakeContractAddress;
-        const approveTx = await tokenContract.write.approve([stakeAddress, amountWei]);
-        await waitForTransactionReceipt(walletClient, { hash: approveTx });
-        const depositTx = await stakeContract.write.deposit([Pid, amountWei]);
-        const res = await waitForTransactionReceipt(walletClient, { hash: depositTx });
-        if (res.status === 'success') {
+        const tokenWithSigner = connectWithSigner(tokenContract, signer);
+        const approveTx = await tokenWithSigner.approve(stakeAddress, amountWei);
+        await approveTx.wait();
+        const depositTx = await stakeWithSigner.deposit(Pid, amountWei);
+        const receipt = await depositTx.wait();
+        if (receipt?.status === 1) {
           toast.success('Stake successful!');
           setAmount('');
-          refetchBalance?.();
+          refetchBalance();
           refresh();
           return;
         }
@@ -119,14 +107,15 @@ const Home = () => {
   };
 
   const handleClaim = async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
 
     try {
       setClaimLoading(true);
-      const tx = await stakeContract.write.claim([Pid]);
-      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+      const tx = await stakeWithSigner.claim(Pid);
+      const receipt = await tx.wait();
 
-      if (res.status === 'success') {
+      if (receipt?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
         refresh();
@@ -140,6 +129,8 @@ const Home = () => {
     }
   };
 
+  const showWalletActions = !isConnected;
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <motion.div
@@ -151,7 +142,7 @@ const Home = () => {
         <div className="inline-block mb-2">
           <motion.div
             animate={{ rotate: 360 }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
             className="w-24 h-24 rounded-full border-2 border-primary-500/20 flex items-center justify-center shadow-xl"
             style={{ boxShadow: '0 0 60px 0 rgba(14,165,233,0.15)' }}
           >
@@ -161,9 +152,7 @@ const Home = () => {
         <h1 className="text-4xl font-bold bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent mb-2">
           MetaNode Stake
         </h1>
-        <p className="text-gray-400 text-xl">
-          Stake ETH to earn tokens
-        </p>
+        <p className="text-gray-400 text-xl">Stake ETH to earn tokens</p>
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
@@ -174,9 +163,12 @@ const Home = () => {
                 <FiTrendingUp className="w-8 h-8 sm:w-10 sm:h-10 text-primary-400" />
               </div>
               <div className="flex flex-col justify-center flex-1 min-w-0 items-center sm:items-start">
-                <span className="text-gray-400 text-base sm:text-lg mb-1">Staked Amount</span>
+                <span className="text-gray-400 text-base sm:text-lg mb-1">
+                  Staked Amount
+                </span>
                 <span className="text-3xl sm:text-5xl font-bold bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent leading-tight break-all">
-                  {parseFloat(poolData.stTokenAmount || '0').toFixed(4)} {isEthPool ? 'ETH' : 'Token'}
+                  {parseFloat(poolData.stTokenAmount || '0').toFixed(4)}{' '}
+                  {isEthPool ? 'ETH' : 'Token'}
                 </span>
               </div>
             </div>
@@ -188,18 +180,24 @@ const Home = () => {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="0.0"
-                rightElement={<span className="text-gray-500">{isEthPool ? 'ETH' : 'Token'}</span>}
-                helperText={balance ? `Available: ${parseFloat(balance.formatted).toFixed(4)} ${isEthPool ? 'ETH' : 'Token'}` : undefined}
+                rightElement={
+                  <span className="text-gray-500">
+                    {isEthPool ? 'ETH' : 'Token'}
+                  </span>
+                }
+                helperText={
+                  balance
+                    ? `Available: ${parseFloat(balance.formatted).toFixed(4)} ${isEthPool ? 'ETH' : 'Token'}`
+                    : undefined
+                }
                 className="text-lg sm:text-xl py-3 sm:py-5"
               />
             </div>
 
             <div className="pt-4 sm:pt-8">
-              {!isConnected ? (
+              {showWalletActions ? (
                 <div className="flex justify-center">
-                  <div className="glow">
-                    <ConnectButton />
-                  </div>
+                  <WalletConnectPrompt />
                 </div>
               ) : (
                 <Button
@@ -224,7 +222,9 @@ const Home = () => {
                 <FiGift className="w-8 h-8 sm:w-10 sm:h-10 text-green-400" />
               </div>
               <div className="flex flex-col justify-center flex-1 min-w-0 items-center sm:items-start">
-                <span className="text-gray-400 text-base sm:text-lg mb-1">Pending Rewards</span>
+                <span className="text-gray-400 text-base sm:text-lg mb-1">
+                  Pending Rewards
+                </span>
                 <span className="text-3xl sm:text-5xl font-bold bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent leading-tight break-all">
                   {parseFloat(rewardsData.pendingReward).toFixed(4)} MetaNode
                 </span>
@@ -248,11 +248,9 @@ const Home = () => {
             </div>
 
             <div className="pt-4 sm:pt-8">
-              {!isConnected ? (
+              {showWalletActions ? (
                 <div className="flex justify-center">
-                  <div className="glow">
-                    <ConnectButton />
-                  </div>
+                  <WalletConnectPrompt />
                 </div>
               ) : (
                 <Button

@@ -1,21 +1,9 @@
 /**
- * 聚合与质押相关的「只读」链上数据，供首页、Claim 页等复用。
- *
- * 数据来源（合约方法）
- * - pool(Pid)：池子配置、总质押量、stToken 地址等；stToken 为 0 地址通常表示原生 ETH 池。
- * - user(Pid, address)：用户维度累计信息；其中 pending 奖励用于展示与 canClaim。
- * - stakingBalance(Pid, address)：当前仍在质押的份额（与 user 内字段用途互补，以合约逻辑为准）。
- * - MetaNode()：奖励代币合约地址，可用于 addMetaNodeToMetaMask。
- *
- * 刷新策略
- * - 连接后 useEffect 拉一次；之后每 60 秒拉 rewards；页面在交易成功后可调用 refresh() 主动更新。
- *
- * retryWithDelay
- * - 包装每次 RPC，降低偶发限流导致的空白数据。
+ * 聚合与质押相关的只读链上数据（ethers Contract）。
  */
 import { useCallback, useEffect, useState } from 'react';
-import { useAccount } from 'wagmi';
-import { formatUnits } from 'viem';
+import { formatUnits } from 'ethers';
+import { useWeb3 } from '../providers/Web3Provider';
 import { useStakeContract } from './useContract';
 import { Pid } from '../utils';
 import { addMetaNodeToMetaMask } from '../utils/metamask';
@@ -27,26 +15,24 @@ export type RewardsData = {
   lastUpdate: number;
 };
 
-/** 与合约 user() 返回值顺序一致 */
 type UserData = [bigint, bigint, bigint];
 
-/** 与合约 pool() 返回值顺序一致 */
 type PoolData = [string, bigint, bigint, bigint, bigint, bigint, bigint];
 
 const useRewards = () => {
   const stakeContract = useStakeContract();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected } = useWeb3();
   const [rewardsData, setRewardsData] = useState<RewardsData>({
     pendingReward: '0',
     stakedAmount: '0',
-    lastUpdate: 0
+    lastUpdate: 0,
   });
   const [loading, setLoading] = useState(false);
 
   const [poolData, setPoolData] = useState<Record<string, string>>({
     poolWeight: '0',
     lastRewardBlock: '0',
-    accMetaNodePerShare: '0'
+    accMetaNodePerShare: '0',
   });
 
   const [metaNodeAddress, setMetaNodeAddress] = useState<string>('');
@@ -55,20 +41,21 @@ const useRewards = () => {
     if (!stakeContract || !address || !isConnected) return;
 
     try {
-      const pool = await retryWithDelay(() =>
-        stakeContract.read.pool([Pid]) as Promise<PoolData>
-      );
+      const pool = (await retryWithDelay(() =>
+        stakeContract.pool(Pid)
+      )) as unknown as PoolData;
 
       console.log('poolInfo:::', pool);
 
+      const z = BigInt(0);
       setPoolData({
-        poolWeight: formatUnits(pool[1] as bigint || BigInt(0), 18),
-        lastRewardBlock: formatUnits(pool[2] as bigint || BigInt(0), 18),
-        accMetaNodePerShare: formatUnits(pool[3] as bigint || BigInt(0), 18),
-        stTokenAmount: formatUnits(pool[4] as bigint || BigInt(0), 18),
-        minDepositAmount: formatUnits(pool[5] as bigint || BigInt(0), 18),
-        unstakeLockedBlocks: formatUnits(pool[6] as bigint || BigInt(0), 18),
-        stTokenAddress: pool[0] as string
+        poolWeight: formatUnits(pool[1] ?? z, 18),
+        lastRewardBlock: formatUnits(pool[2] ?? z, 18),
+        accMetaNodePerShare: formatUnits(pool[3] ?? z, 18),
+        stTokenAmount: formatUnits(pool[4] ?? z, 18),
+        minDepositAmount: formatUnits(pool[5] ?? z, 18),
+        unstakeLockedBlocks: formatUnits(pool[6] ?? z, 18),
+        stTokenAddress: String(pool[0]),
       });
     } catch (error) {
       console.error('Failed to fetch pool data:', error);
@@ -79,10 +66,8 @@ const useRewards = () => {
     if (!stakeContract) return;
 
     try {
-      const tokenAddr = await retryWithDelay(() =>
-        stakeContract.read.MetaNode() as Promise<string>
-      );
-      setMetaNodeAddress(tokenAddr as string);
+      const tokenAddr = await retryWithDelay(() => stakeContract.MetaNode());
+      setMetaNodeAddress(String(tokenAddr));
     } catch (error) {
       console.error('Failed to fetch MetaNode address:', error);
     }
@@ -94,27 +79,27 @@ const useRewards = () => {
     try {
       setLoading(true);
 
-      const userData = await retryWithDelay(() =>
-        stakeContract.read.user([Pid, address]) as Promise<UserData>
-      );
+      const userData = (await retryWithDelay(() =>
+        stakeContract.user(Pid, address)
+      )) as unknown as UserData;
       const stakedAmount = await retryWithDelay(() =>
-        stakeContract.read.stakingBalance([Pid, address]) as Promise<bigint>
+        stakeContract.stakingBalance(Pid, address)
       );
 
       console.log('User data:', userData);
       console.log('Staked amount:', stakedAmount);
 
       setRewardsData({
-        pendingReward: formatUnits(userData[2] || BigInt(0), 18),
-        stakedAmount: formatUnits(stakedAmount as bigint || BigInt(0), 18),
-        lastUpdate: Date.now()
+        pendingReward: formatUnits(userData[2] ?? BigInt(0), 18),
+        stakedAmount: formatUnits(stakedAmount as bigint, 18),
+        lastUpdate: Date.now(),
       });
     } catch (error) {
       console.error('Failed to fetch rewards data:', error);
       setRewardsData({
         pendingReward: '0',
         stakedAmount: '0',
-        lastUpdate: Date.now()
+        lastUpdate: Date.now(),
       });
     } finally {
       setLoading(false);
@@ -125,9 +110,14 @@ const useRewards = () => {
     if (isConnected && address) {
       fetchRewardsData();
       fetchPoolData();
+    }
+  }, [isConnected, address, fetchRewardsData, fetchPoolData]);
+
+  useEffect(() => {
+    if (stakeContract) {
       fetchMetaNodeAddress();
     }
-  }, [isConnected, address, fetchRewardsData, fetchPoolData, fetchMetaNodeAddress]);
+  }, [stakeContract, fetchMetaNodeAddress]);
 
   useEffect(() => {
     if (!isConnected || !address) return;
@@ -164,7 +154,7 @@ const useRewards = () => {
     metaNodeAddress,
     refresh,
     addMetaNodeToWallet,
-    canClaim: parseFloat(rewardsData.pendingReward) > 0
+    canClaim: parseFloat(rewardsData.pendingReward) > 0,
   };
 };
 

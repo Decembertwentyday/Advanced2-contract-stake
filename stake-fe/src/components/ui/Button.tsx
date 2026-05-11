@@ -20,6 +20,7 @@ interface ButtonProps {
   type?: 'button' | 'submit' | 'reset';
   variant?: 'primary' | 'secondary' | 'outline';
   fullWidth?: boolean;
+  title?: string;
 }
 
 export const Button = ({
@@ -31,6 +32,7 @@ export const Button = ({
   type = 'button',
   variant = 'primary',
   fullWidth = false,
+  title,
 }: ButtonProps) => {
   const baseStyles = "flex items-center justify-center space-x-2 transition-all duration-300";
 
@@ -44,6 +46,7 @@ export const Button = ({
     <motion.button
       whileHover={{ scale: 1.02 }}
       whileTap={{ scale: 0.98 }}
+      title={title}
       onClick={onClick}
       disabled={disabled || loading}
       type={type}

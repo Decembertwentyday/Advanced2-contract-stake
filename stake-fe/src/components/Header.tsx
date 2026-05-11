@@ -1,29 +1,27 @@
-/**
- * 顶栏：品牌、路由导航、RainbowKit 连接按钮。
- *
- * 'use client'
- * - 使用了 useState、usePathname 等浏览器端能力；在 Next 中标记为客户端组件，避免被误当成纯服务端模块。
- *
- * usePathname（next/navigation）
- * - 取当前路径，用于高亮「Stake / Withdraw / Claim」。
- * - 本项目是 Pages Router，但 Next 15 仍可在部分场景使用 navigation 里的 hook；若遇兼容问题可改回 useRouter().pathname。
- *
- * ConnectButton
- * - 来自 RainbowKit：内部会调 wagmi 的连接逻辑，弹出钱包选择器。
- */
-'use client'
+'use client';
+
 import { motion } from 'framer-motion';
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { FiMenu, FiZap } from 'react-icons/fi';
 import { useState } from 'react';
 import { cn } from '../utils/cn';
+import { useWeb3 } from '../providers/Web3Provider';
+import { MULTI_WALLET_ENV_HINT } from '../utils/walletUiCopy';
+import { Button } from './ui/Button';
 
 const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const {
+    address,
+    isConnected,
+    needsNetworkSwitch,
+    connect,
+    disconnect,
+    switchToSepolia,
+    isConnecting,
+  } = useWeb3();
 
-  /** 与 pages 目录下的路由一一对应 */
   const Links = [
     { name: 'Stake', path: '/' },
     { name: 'Withdrawal', path: '/withdraw' },
@@ -31,6 +29,11 @@ const Header = () => {
   ];
 
   const pathname = usePathname();
+
+  const shortAddr =
+    address && address.length > 10
+      ? `${address.slice(0, 6)}…${address.slice(-4)}`
+      : address ?? '';
 
   return (
     <motion.header
@@ -47,23 +50,25 @@ const Header = () => {
             className="flex flex-col md:flex-row items-center md:space-x-2 text-center md:text-left"
           >
             <FiZap className="w-5 h-5 sm:w-6 sm:h-6 text-primary-500 animate-pulse-slow mb-1 md:mb-0" />
-            <Link href="/" className="text-lg sm:text-xl md:text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent leading-tight">
+            <Link
+              href="/"
+              className="text-lg sm:text-xl md:text-2xl font-bold bg-gradient-to-r from-primary-400 to-primary-600 bg-clip-text text-transparent leading-tight"
+            >
               <span className="block md:inline">MetaNode</span>
               <span className="block md:inline"> Stake</span>
             </Link>
           </motion.div>
 
-          {/* 桌面端：横向导航；layoutId 用于 framer-motion 下划线滑动动画 */}
           <nav className="hidden md:flex items-center space-x-6 lg:space-x-8">
             {Links.map((link) => {
-              const isActive = pathname === link.path || pathname === link.path + '/';
+              const isActive = pathname === link.path || pathname === `${link.path}/`;
               return (
                 <Link
                   key={link.name}
                   href={link.path}
                   className={cn(
-                    "relative text-base lg:text-lg font-medium transition-all duration-300 group",
-                    isActive ? "text-primary-400" : "text-gray-400 hover:text-primary-400"
+                    'relative text-base lg:text-lg font-medium transition-all duration-300 group',
+                    isActive ? 'text-primary-400' : 'text-gray-400 hover:text-primary-400'
                   )}
                 >
                   {link.name}
@@ -72,7 +77,7 @@ const Header = () => {
                       layoutId="activeTab"
                       className="absolute -bottom-[1.5px] left-0 right-0 h-0.5 bg-gradient-to-r from-primary-400 to-primary-600"
                       initial={false}
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                     />
                   )}
                   <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary-400 group-hover:w-full transition-all duration-300" />
@@ -82,8 +87,40 @@ const Header = () => {
           </nav>
 
           <div className="flex items-center gap-2 md:gap-4 mt-2 md:mt-0">
-            <div className="glow min-w-[100px] sm:min-w-[120px]">
-              <ConnectButton />
+            <div className="flex items-center gap-2 min-w-[100px] sm:min-w-[120px] justify-end">
+              {needsNetworkSwitch && (
+                <Button
+                  onClick={() => switchToSepolia()}
+                  loading={isConnecting}
+                  className="btn-primary text-xs sm:text-sm px-3 py-2"
+                >
+                  Sepolia
+                </Button>
+              )}
+              {!isConnected && !needsNetworkSwitch && (
+                <Button
+                  title={MULTI_WALLET_ENV_HINT}
+                  onClick={() => connect()}
+                  loading={isConnecting}
+                  className="btn-primary text-xs sm:text-sm px-3 py-2"
+                >
+                  连接
+                </Button>
+              )}
+              {isConnected && address && (
+                <div className="flex items-center gap-2">
+                  <span className="text-gray-300 text-xs sm:text-sm font-mono hidden sm:inline">
+                    {shortAddr}
+                  </span>
+                  <Button
+                    onClick={() => disconnect()}
+                    variant="outline"
+                    className="text-xs sm:text-sm px-2 py-1.5 border-gray-600 text-gray-300"
+                  >
+                    断开
+                  </Button>
+                </div>
+              )}
             </div>
             <button
               className="md:hidden p-1.5 sm:p-2 ml-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-primary-400 transition-colors duration-200"
@@ -96,24 +133,23 @@ const Header = () => {
         </div>
       </div>
 
-      {/* 移动端：折叠菜单 */}
       <motion.div
         initial={false}
-        animate={{ height: isMobileMenuOpen ? "auto" : 0 }}
+        animate={{ height: isMobileMenuOpen ? 'auto' : 0 }}
         className="md:hidden overflow-hidden"
       >
         <div className="px-3 sm:px-4 py-2 space-y-1 bg-gray-900/95 backdrop-blur-xl border-t border-gray-800">
           {Links.map((link) => {
-            const isActive = pathname === link.path || pathname === link.path + '/';
+            const isActive = pathname === link.path || pathname === `${link.path}/`;
             return (
               <Link
                 key={link.name}
                 href={link.path}
                 className={cn(
-                  "block px-3 py-2 rounded-lg text-sm sm:text-base font-medium transition-colors duration-200",
+                  'block px-3 py-2 rounded-lg text-sm sm:text-base font-medium transition-colors duration-200',
                   isActive
-                    ? "bg-primary-500/10 text-primary-400"
-                    : "text-gray-400 hover:bg-gray-800 hover:text-primary-400"
+                    ? 'bg-primary-500/10 text-primary-400'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-primary-400'
                 )}
                 onClick={() => setIsMobileMenuOpen(false)}
               >

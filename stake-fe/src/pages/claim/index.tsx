@@ -1,44 +1,37 @@
-/**
- * 路由：/claim
- *
- * 专注「领取奖励」的独立页面；逻辑与首页里的 handleClaim 类似。
- * 数据仍来自 useRewards（与首页共享同一套链上读逻辑）。
- *
- * 流程：write.claim([Pid]) → waitForTransactionReceipt → refresh 更新 pending 奖励显示。
- */
-'use client'
+'use client';
+
 import { motion } from 'framer-motion';
-import { useStakeContract } from "../../hooks/useContract";
-import useRewards from "../../hooks/useRewards";
-import { useCallback, useState } from "react";
-import { Pid } from "../../utils";
-import { useAccount, useWalletClient } from "wagmi";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { waitForTransactionReceipt } from "viem/actions";
-import { toast } from "react-toastify";
+import { useStakeContract } from '../../hooks/useContract';
+import useRewards from '../../hooks/useRewards';
+import { useCallback, useState } from 'react';
+import { Pid } from '../../utils';
+import { useWeb3 } from '../../providers/Web3Provider';
+import { toast } from 'react-toastify';
 import { FiGift, FiInfo, FiTrendingUp, FiClock, FiZap } from 'react-icons/fi';
 import { cn } from '../../utils/cn';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { WalletConnectPrompt } from '../../components/WalletConnectPrompt';
+import { connectWithSigner } from '../../utils/connectWithSigner';
 
 const Claim = () => {
   const stakeContract = useStakeContract();
-  const { isConnected } = useAccount();
+  const { isConnected, signer } = useWeb3();
   const { rewardsData, canClaim, refresh } = useRewards();
   const [claimLoading, setClaimLoading] = useState(false);
-  const { data: walletClient } = useWalletClient();
 
   const handleClaim = useCallback(async () => {
-    if (!stakeContract || !walletClient) return;
+    if (!stakeContract || !signer) return;
 
     try {
       setClaimLoading(true);
-      const tx = await stakeContract.write.claim([Pid]);
-      console.log(tx, '===tx===');
+      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+      const tx = await stakeWithSigner.claim(Pid);
+      console.log(tx.hash, '===tx===');
 
-      const res = await waitForTransactionReceipt(walletClient, { hash: tx });
+      const receipt = await tx.wait();
 
-      if (res.status === 'success') {
+      if (receipt?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
         refresh();
@@ -50,7 +43,7 @@ const Claim = () => {
       toast.error('Transaction failed. Please try again.');
       console.log(error, 'claim-error');
     }
-  }, [stakeContract, walletClient, refresh]);
+  }, [stakeContract, signer, refresh]);
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -73,9 +66,7 @@ const Claim = () => {
         <h1 className="text-4xl font-bold bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent mb-4">
           Claim Rewards
         </h1>
-        <p className="text-gray-400 text-xl">
-          Claim your MetaNode rewards
-        </p>
+        <p className="text-gray-400 text-xl">Claim your MetaNode rewards</p>
       </motion.div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -114,7 +105,9 @@ const Claim = () => {
                   <span className="text-gray-300 font-medium">Last Update</span>
                 </div>
                 <span className="text-sm font-medium text-purple-400">
-                  {rewardsData.lastUpdate > 0 ? new Date(rewardsData.lastUpdate).toLocaleTimeString() : 'Never'}
+                  {rewardsData.lastUpdate > 0
+                    ? new Date(rewardsData.lastUpdate).toLocaleTimeString()
+                    : 'Never'}
                 </span>
               </div>
             </div>
@@ -140,38 +133,38 @@ const Claim = () => {
               </div>
             </div>
 
-            <div className={cn(
-              "rounded-xl p-6 border",
-              canClaim
-                ? "bg-green-500/10 border-green-500/20"
-                : "bg-gray-500/10 border-gray-500/20"
-            )}>
+            <div
+              className={cn(
+                'rounded-xl p-6 border',
+                canClaim
+                  ? 'bg-green-500/10 border-green-500/20'
+                  : 'bg-gray-500/10 border-gray-500/20'
+              )}
+            >
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <FiZap className={cn(
-                    "w-5 h-5",
-                    canClaim ? "text-green-400" : "text-gray-400"
-                  )} />
-                  <span className={cn(
-                    "font-medium",
-                    canClaim ? "text-green-400" : "text-gray-400"
-                  )}>
-                    {canClaim ? "Ready to Claim" : "No Rewards Available"}
+                  <FiZap
+                    className={cn('w-5 h-5', canClaim ? 'text-green-400' : 'text-gray-400')}
+                  />
+                  <span
+                    className={cn(
+                      'font-medium',
+                      canClaim ? 'text-green-400' : 'text-gray-400'
+                    )}
+                  >
+                    {canClaim ? 'Ready to Claim' : 'No Rewards Available'}
                   </span>
                 </div>
-                <div className={cn(
-                  "w-3 h-3 rounded-full",
-                  canClaim ? "bg-green-400" : "bg-gray-400"
-                )} />
+                <div
+                  className={cn('w-3 h-3 rounded-full', canClaim ? 'bg-green-400' : 'bg-gray-400')}
+                />
               </div>
             </div>
 
             <div className="pt-4">
               {!isConnected ? (
                 <div className="flex justify-center">
-                  <div className="glow">
-                    <ConnectButton />
-                  </div>
+                  <WalletConnectPrompt />
                 </div>
               ) : (
                 <Button
