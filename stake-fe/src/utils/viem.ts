@@ -13,12 +13,33 @@ import { sepolia } from "viem/chains";
 import { PublicClient, createPublicClient } from 'viem';
 import { sepoliaTransport } from './sepoliaTransport';
 
+// 这里是把publicClient 公共客户端封装了一下
 export const viemClients = (chaiId: number): PublicClient => {
   const clients: Record<number, PublicClient> = {
     [sepolia.id]: createPublicClient({
-      chain: sepolia,
-      transport: sepoliaTransport,
+      chain: sepolia, // 测试网
+      transport: sepoliaTransport, // RPC 节点，里面使用了fallback 里面有多个节点，其中一个失败，会自动切换下一个节点，直到所有节点都失败
     }),
+    // createPublicClient: 创建只读客户端，配置链，以及RPC - 进行合约的查询区块链数据，不需要私钥
+    //   没有私钥时，可以用只读客户端 进行读合约的操作，查余额 等等
   };
   return clients[chaiId];
 };
+
+// 在外面使用
+// 获取 PublicClient
+// const client = viemClients(sepolia.id);
+//
+// // 查询用户余额
+// const balance = await client.getBalance({
+//   address: userAddress,
+// });
+//
+// // 读取合约的总质押量
+// const totalStaked = await client.readContract({
+//   address: stakeContractAddress,
+//   abi: stakeAbi,
+//   functionName: 'totalStaked',
+// });
+//
+// console.log(`总质押量: ${totalStaked}`);

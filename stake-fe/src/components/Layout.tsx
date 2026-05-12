@@ -30,10 +30,19 @@ export default function Layout({ children }: LayoutProps) {
 
       <div className="relative flex flex-col flex-grow">
         <Header />
+        {/*其实就是一个动画效果，一些动作看起来更丝滑*/}
+        {/*framer-motion 是一个 React 动画库，官网：https://www.framer.com/motion/*/}
+
+        {/*motion.main 就是一个带动画效果的内容容器：*/}
+        {/*作用：让页面内容加载时有平滑的进入动画*/}
+        {/*效果：从下方淡入滑上来，耗时 0.5 秒*/}
+        {/*好处：提升用户体验，看起来更专业*/}
+        {/*来源：framer-motion 动画库*/}
+        {/*就像电影开场的转场特效一样，让页面切换不那么生硬！🎥✨*/}
         <motion.main
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
+          initial={{ opacity: 0, y: 20 }} // 🎯 初始状态：透明 + 向下偏移20px
+          animate={{ opacity: 1, y: 0 }}// 🎬 动画目标：完全不透明 + 回到原位
+          transition={{ duration: 0.5 }} // ⏱️ 动画时长：0.5秒
           className="flex-grow max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 md:py-8"
         >
           {children}

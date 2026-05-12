@@ -6,6 +6,8 @@
  *
  * projectId（Cloud.walletconnect.com）
  * - 用于 WalletConnect v2 中继，不是 Infura key；移动端扫码连接等场景需要。
+ * Infura 是一个提供区块链节点服务的平台，它为开发者提供访问以太坊等区块链网络的 API 接口。
+ * Infura key：访问区块链节点的 RPC 服务
  *
  * transports[chainId]
  * - 告诉 wagmi：该链的 JSON-RPC 走哪条 HTTP（或 WebSocket）。
@@ -21,6 +23,7 @@ import { sepoliaTransport } from './sepoliaTransport';
 /** WalletConnect Cloud 项目 ID，与 Infura / 合约无关 */
 const ProjectId = '8d76c8234e7c2d581fa5d926d8a0d31b';
 
+// 配置对象
 export const config = getDefaultConfig({
   appName: 'Meta Node Stake',
   projectId: ProjectId,
@@ -28,7 +31,7 @@ export const config = getDefaultConfig({
   transports: {
     [sepolia.id]: sepoliaTransport,
   },
-  ssr: true,
+  ssr: true, // Next.js
 });
 
 /** 与合约 helper 默认链保持一致，避免未传 chainId 时错链 */

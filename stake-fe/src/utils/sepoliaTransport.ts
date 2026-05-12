@@ -21,3 +21,5 @@ export const sepoliaTransport = fallback([
   http('https://ethereum-sepolia-rpc.publicnode.com'),
   http('https://1rpc.io/sepolia'),
 ]);
+
+// fallback 里面的某一个rpc报错不能用了，则尝试下一个，为了避免单点挂了

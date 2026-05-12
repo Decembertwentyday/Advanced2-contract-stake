@@ -45,6 +45,7 @@ function MyApp({ Component, pageProps }: AppProps) {
         />
         <link href="/favicon.ico" rel="icon" />
       </Head>
+      {/*MUI组件库*/}
       <ThemeProvider theme={theme}>
         <WagmiProvider config={config}>
           <QueryClientProvider client={client}>
@@ -52,19 +53,20 @@ function MyApp({ Component, pageProps }: AppProps) {
               {/*
                 ToastContainer：全局挂载一次即可，任意子组件里调用 toast.success/error 都会显示。
                 仅保留类型支持的 props（react-toastify v11 部分 className 子项已变更）。
+                就是一个全局消息通知系统：
               */}
               <ToastContainer
-                position="top-right"
-                autoClose={3000}
-                hideProgressBar={false}
-                newestOnTop={false}
-                closeOnClick
-                rtl={false}
-                pauseOnFocusLoss
-                draggable
-                pauseOnHover
-                theme="light"
-                toastClassName="custom-toast"
+                  position="top-right"        // 📍 显示位置：右上角
+                  autoClose={3000}            // ⏰ 自动关闭：3秒后消失
+                  hideProgressBar={false}     // 📊 显示进度条（倒计时）
+                  newestOnTop={false}         // 📋 新消息不在最上面
+                  closeOnClick                // 👆 点击可以关闭
+                  rtl={false}                 // ➡️ 不从右到左排列
+                  pauseOnFocusLoss            // ⏸️ 失去焦点时暂停
+                  draggable                   // 🖱️ 可以拖动关闭
+                  pauseOnHover                // ⏸️ 鼠标悬停时暂停计时
+                  theme="light"               // 🎨 浅色主题
+                  toastClassName="custom-toast" // 🎭 自定义样式类名
               />
               {/*
                 Layout 提供顶栏、页脚、背景；children 区域渲染当前路由页面。
