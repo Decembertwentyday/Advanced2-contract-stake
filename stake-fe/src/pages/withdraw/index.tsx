@@ -29,10 +29,16 @@ export type UserStakeData = {
   withdrawable: string;
 };
 
+// * 核心逻辑：计算三种状态的金额
+// * - 已质押（staked）：还在锁定的资金
+// * - 处理中（withdrawPending）：已申请解押但还在等待期
+// * - 可提取（withdrawable）：等待期结束，可以真正提现的金额
+
 const InitData: UserStakeData = {
   staked: '0',
   withdrawable: '0',
   withdrawPending: '0'
+
 };
 
 const Withdraw = () => {
@@ -43,20 +49,41 @@ const Withdraw = () => {
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const { data: walletClient } = useWalletClient();
   const [userData, setUserData] = useState<UserStakeData>(InitData);
-
+  // 判断的能不能点击 提取  判断以及解押的金额，解押就是可提现的金额 并且钱包是已连接的状态
   const isWithdrawable = useMemo(() => Number(userData.withdrawable) > 0 && isConnected, [userData, isConnected]);
 
   const getUserData = useCallback(async () => {
     if (!stakeContract || !address) return;
+    // 获取用户质押的代币数量
+    // 钱包客户端 根据内置的属性读取合约中质押的代币数量
     const staked = await stakeContract.read.stakingBalance([Pid, address]);
     // 合约返回结构：以 ABI 为准；此处保持与原实现一致
     // @ts-expect-error withdrawAmount 元组类型未在 ABI 中收窄时需断言
+    // 这个获取的是待提取的代币数量
+    // 📝 合约返回结构说明：
+    // withdrawAmount 返回一个元组 [requestAmount, pendingWithdrawAmount]
+    // - requestAmount: 用户申请解押的总金额（包括等待中的和可提取的）
+    // - pendingWithdrawAmount: 已经完成等待期，可以真正提取的金额
+
+    // 🔍 第二次 RPC 调用：获取解押相关信息
+    // @ts-expect-error withdrawAmount 元组类型未在 ABI 中收窄时需断言
+    // 这个获取的是待提取的代币数量
     const [requestAmount, pendingWithdrawAmount] = await stakeContract.read.withdrawAmount([Pid, address]);
+    // 获取待提取的代币数量
+    // 🔢 数据转换：将 BigInt 转换为人类可读的数字
+    // formatUnits(1000000000000000000n, 18) → "1.0"
+    // Number("1.0") → 1.0（用于后续计算）
     const ava = Number(formatUnits(pendingWithdrawAmount, 18));
     const total = Number(formatUnits(requestAmount, 18));
+    // 📝 更新用户数据状态
     setUserData({
       staked: formatUnits(staked as bigint, 18),
+      // ⏳ 处理中金额：已申请解押但还在等待期
+      // 计算公式：总申请量 - 可提取量 = 等待中的量
+      // 例如：申请解押 10 ETH，其中 6 ETH 已过等待期，4 ETH 还在等待
+      // withdrawPending = 10 - 6 = 4 ETH
       withdrawPending: (total - ava).toFixed(4),
+      // ✅ 可提取金额：等待期已结束，可以点击"Withdraw"按钮提现
       withdrawable: ava.toString()
     });
   }, [stakeContract, address]);
@@ -79,7 +106,9 @@ const Withdraw = () => {
     }
     try {
       setUnstakeLoading(true);
+      // 钱包客户端 根据内置的属性 进行解押操作 写入的操作，解押金额，会触发钱包弹窗 发起确认，点击确认后，会广播到链上，返回hash
       const tx = await stakeContract.write.unstake([Pid, parseUnits(amount, 18)]);
+      // 把hash 当做参数传递，这里会进行监听，矿工直到处理完成后，会返回结果
       await waitForTransactionReceipt(walletClient, { hash: tx });
       toast.success('Unstake successful!');
       setAmount('');

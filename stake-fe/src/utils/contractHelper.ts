@@ -28,7 +28,7 @@ export const getContract = <TAbi extends Abi | readonly unknown[], TWalletClient
   abi, // 合约 ABI（接口定义
   address, // 合约地址
   chainId = defaultChainId,
-  signer, // 签名者（钱包客户端，可选
+  signer, // 签名者（钱包客户端，可选, signer 就是外部传进来的钱包客户端对象)
 }: {
   abi: TAbi | readonly unknown[]; // 合约的接口定义，告诉代码有哪些方法可以调用 必须填写
   address: Address; // 合约在区块链上的地址 必须填写
@@ -36,6 +36,8 @@ export const getContract = <TAbi extends Abi | readonly unknown[], TWalletClient
   signer?: TWalletClient; // 用户的钱包，用于签名交易
 }) => {
   // 创建合约实例
+  // 、viemGetContract：viem的工厂函数，用来创建合约实例根据输入的参数，输入一个双客户端
+  // 输出：封装好的合约对象（带 .read 和 .write 方法）
   const c = viemGetContract({
     abi,
     address,

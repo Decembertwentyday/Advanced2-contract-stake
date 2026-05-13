@@ -43,14 +43,14 @@ const Home = () => {
   const [loading, setLoading] = useState(false);
   const [claimLoading, setClaimLoading] = useState(false);
   const { data: walletClient } = useWalletClient();
-
+  // 根据获取的代币地址 是否为空判断展示 ETH 还是token
   const isEthPool = useMemo(() => {
     const addr = poolData.stTokenAddress;
     return !addr || addr === zeroAddress || addr === '0x0000000000000000000000000000000000000000';
   }, [poolData.stTokenAddress]);
 
   const tokenContract = useTokenContract(poolData.stTokenAddress as Address | undefined);
-
+  // balance 根据 wagmi useBalance 获取
   const { data: balance, refetch: refetchBalance } = useBalance({
     address: address,
     token: isEthPool ? undefined : (poolData.stTokenAddress as Address | undefined),
@@ -61,7 +61,9 @@ const Home = () => {
     }
   });
 
+  // 进行质押
   const handleStake = async () => {
+    // 判断客户端对象  以及钱包客户端对象
     if (!stakeContract || !walletClient) return;
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
@@ -69,6 +71,7 @@ const Home = () => {
     }
 
     const decimals = balance?.decimals ?? 18;
+    // 因为输入的是ETH，在进行给合约传值的要转GWEi
     const amountWei = parseUnits(amount, decimals);
 
     if (!balance || parseFloat(amount) > parseFloat(balance.formatted)) {
@@ -79,27 +82,34 @@ const Home = () => {
     try {
       setLoading(true);
 
-      if (isEthPool) {
+      if (isEthPool) {//  ETH
+        // 直接进行质押 使用的是封装的双客户端里的write里的内置方法  depositETH
         const tx = await stakeContract.write.depositETH([], { value: amountWei });
+        // 上面会拉起钱包弹窗 的授权，点击确认后，会广播到链上，返回hash
+        // waitForTransactionReceipt: 把hash 当做参数传递，这里会进行监听，矿工直到处理完成后，会返回结果
         const res = await waitForTransactionReceipt(walletClient, { hash: tx });
         if (res.status === 'success') {
           toast.success('Stake successful!');
           setAmount('');
           refetchBalance?.();
-          refresh();
+          refresh(); // 更新池子里的数据
           return;
         }
         toast.error('Stake failed!');
-      } else {
-        if (!tokenContract) {
+      } else { // 代币
+        if (!tokenContract) { // 代币合约不存在
           toast.error('Token contract not ready');
           setLoading(false);
           return;
         }
         const stakeAddress = StakeContractAddress;
+        // 这段代码的作用就是拉起 MetaMask 授权弹窗，代币
         const approveTx = await tokenContract.write.approve([stakeAddress, amountWei]);
+        // 等待授权完成
         await waitForTransactionReceipt(walletClient, { hash: approveTx });
+        // 质押代币
         const depositTx = await stakeContract.write.deposit([Pid, amountWei]);
+        // 等待质押完成
         const res = await waitForTransactionReceipt(walletClient, { hash: depositTx });
         if (res.status === 'success') {
           toast.success('Stake successful!');
