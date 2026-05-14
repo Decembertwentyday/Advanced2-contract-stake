@@ -1,3 +1,9 @@
+/**
+ * 顶栏：路由导航 + 钱包状态（连接 / 切 Sepolia / 短地址展示 / 断开）。
+ *
+ * 所有链状态来自 `useWeb3()`，与 `WalletConnectPrompt` 共用同一套 `connect` / `switchToSepolia`，
+ * 避免页面内按钮与顶栏行为不一致。
+ */
 'use client';
 
 import { motion } from 'framer-motion';

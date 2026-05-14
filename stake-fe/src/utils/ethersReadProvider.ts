@@ -1,58 +1,47 @@
 /**
- * Sepolia 测试网 —— **只读** JSON-RPC 入口（不经过 MetaMask）。
+ * Sepolia **只读** HTTP 入口：不经过浏览器钱包，与「连接 MetaMask」无关。
  *
- * ## 在本项目中的职责
- * - 为未连接钱包的页面提供 `eth_call`、`getBalance`、`getBlockNumber` 等能力，用于展示**公开链上数据**（池子参数、待领取奖励等）。
- * - 与 `Web3Provider` 里的 `BrowserProvider` **并行存在**：前者走 HTTP，后者走用户扩展。
- *
- * ## 为什么用 FallbackProvider？
- * - 公共 RPC 可能限流、短暂不可用；`FallbackProvider` 按 `weight` / `quorum` 在多个子 `JsonRpcProvider` 间择优响应，提高可用性。
- *
- * ## 为什么 staticNetwork？
- * - ethers v6 的 `JsonRpcProvider` 启动时会做「探测链 ID」循环；若首个 URL 长期失败，会在控制台每秒打印重试日志（见 ethers issue #4377）。
- * - 我们明确只连 **Sepolia（chainId 固定）**，传入 `staticNetwork: SEPOLIA_NETWORK` 可跳过反复探测，**只影响 HTTP 这条读链路**，与 MetaMask 是否切换网络无关。
- *
- * ## 环境变量
- * - `NEXT_PUBLIC_INFURA_API_KEY`：若配置，则优先使用你的 Infura 节点；否则使用文件内列出的公共 URL（避免使用无效占位 Key）。
+ * FallbackProvider：多个 JsonRpcProvider 并联，单点故障/限流时换节点再问。
+ * staticNetwork：告诉 ethers「链 ID 已知」，跳过反复 eth_chainId 探测（避免控制台刷屏）。
  */
+import { FallbackProvider, JsonRpcProvider, Network } from 'ethers'; // JsonRpcProvider：单 URL HTTP；FallbackProvider：聚合多个
+import { SEPOLIA_CHAIN_ID } from '../config/chain'; // 十进制 11155111，与链上 chainId 一致
 
-import { FallbackProvider, JsonRpcProvider, Network } from 'ethers';
-import { SEPOLIA_CHAIN_ID } from '../config/chain';
-
-/** 与 `SEPOLIA_CHAIN_ID` 对应的 Network 对象，供 JsonRpcProvider 第二参 + staticNetwork 使用 */
+// Network.from：构造 ethers 的链描述对象；与子 JsonRpcProvider 的 staticNetwork 用同一对象引用更稳
 const SEPOLIA_NETWORK = Network.from(SEPOLIA_CHAIN_ID);
 
 /**
- * 返回按优先级排列的 Sepolia HTTP RPC URL 列表。
- * - 有 Infura Key 时：Infura 在前，公共节点作后备。
- * - 无 Key 时：仅公共节点，避免无效第三方 Key 导致首节点永远失败。
+ * 按优先级返回 RPC URL 列表：有私钥 Infura 时优先自己的节点，否则全用公共节点。
  */
 function sepoliaRpcUrls(): string[] {
+  // process 在 Next 服务端/客户端构建时均可能存在；无 env 时用 undefined
   const infuraKey = typeof process !== 'undefined' ? process.env.NEXT_PUBLIC_INFURA_API_KEY : undefined;
   const publicRpcs = [
-    'https://ethereum-sepolia-rpc.publicnode.com',
-    'https://1rpc.io/sepolia',
-    'https://sepolia.drpc.org',
+    'https://ethereum-sepolia-rpc.publicnode.com', // 公共节点 1
+    'https://1rpc.io/sepolia', // 公共节点 2
+    'https://sepolia.drpc.org', // 公共节点 3
   ];
   if (infuraKey) {
+    // 自己的 Infura key 放最前：配额可控、延迟通常更好；后面公共 URL 作后备
     return [`https://sepolia.infura.io/v3/${infuraKey}`, ...publicRpcs];
   }
-  return publicRpcs;
+  return publicRpcs; // 无 key：避免写死无效 key 导致第一个子 Provider 永远失败
 }
 
 /**
- * 构造全局单例式的只读 Provider（在 Web3Provider 内 `useMemo` 只创建一次）。
- *
- * @returns `FallbackProvider`，`quorum: 1` 表示只要有一个子节点返回一致结果即可（读场景足够）。
+ * 创建全站共享的只读 Provider（在 Web3Provider 里 useMemo 一次）。
+ * quorum: 1 表示读操作只要有一个子节点返回即可（不必多节点交叉验证）。
  */
 export function createSepoliaReadProvider(): FallbackProvider {
-  const urls = sepoliaRpcUrls();
+  const urls = sepoliaRpcUrls(); // 字符串 URL 列表
+  // 每个 URL 对应一个子 JsonRpcProvider；FallbackProvider 会按 weight/超时调度
   const configs = urls.map((url) => ({
     provider: new JsonRpcProvider(url, SEPOLIA_NETWORK, {
-      staticNetwork: SEPOLIA_NETWORK,
+      staticNetwork: SEPOLIA_NETWORK, // 固定链：跳过 provider._network 自举循环
     }),
-    weight: 1,
-    stallTimeout: 1500,
+    weight: 1, // 权重相同：轮流/择优由 FallbackProvider 内部策略决定
+    stallTimeout: 1500, // 子请求 stall 判定：毫秒，过短易误判，过长拖慢回退
   }));
+  // 第二参传 chainId：帮助 Fallback 做网络匹配；quorum 1 适合读 dApp
   return new FallbackProvider(configs, SEPOLIA_CHAIN_ID, { quorum: 1 });
 }

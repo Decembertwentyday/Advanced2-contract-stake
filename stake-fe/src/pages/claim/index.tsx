@@ -1,3 +1,9 @@
+/**
+ * 领取页：与首页右侧「Claim」逻辑类似，独立路由便于导航与后续扩展（如历史记录）。
+ *
+ * 流程：`connectWithSigner` → `claim(Pid)` → `tx.wait()` → `refresh()` 拉最新待领取。
+ * `useRewards` 在已连接时轮询/刷新 `pendingReward`，按钮 `disabled` 由 `canClaim` 控制。
+ */
 'use client';
 
 import { motion } from 'framer-motion';
@@ -21,20 +27,20 @@ const Claim = () => {
   const [claimLoading, setClaimLoading] = useState(false);
 
   const handleClaim = useCallback(async () => {
-    if (!stakeContract || !signer) return;
+    if (!stakeContract || !signer) return; // 缺合约或 signer：不发交易
 
     try {
       setClaimLoading(true);
-      const stakeWithSigner = connectWithSigner(stakeContract, signer);
-      const tx = await stakeWithSigner.claim(Pid);
-      console.log(tx.hash, '===tx===');
+      const stakeWithSigner = connectWithSigner(stakeContract, signer); // 写方法：runner 必须是 Signer
+      const tx = await stakeWithSigner.claim(Pid); // Pid：池索引；与首页一致
+      console.log(tx.hash, '===tx==='); // tx.hash：可在浏览器/Etherscan 跟踪
 
-      const receipt = await tx.wait();
+      const receipt = await tx.wait(); // 等待确认块
 
       if (receipt?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
-        refresh();
+        refresh(); // 更新 pendingReward
         return;
       }
       toast.error('Claim failed!');

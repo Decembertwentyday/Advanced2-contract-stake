@@ -1,3 +1,11 @@
+/**
+ * 提现页：合约里「解质押」与「取出已到期的本金」往往是两步。
+ *
+ * - **unstake**：发起赎回请求，资金进入「锁定期 / 排队」状态（与合约 `withdrawAmount` 语义一致）。
+ * - **withdraw**：锁定期结束后，把可领取额度真正转回钱包；`userData.withdrawable` 来自链上读数。
+ *
+ * 读数据用 `useStakeContract()` 返回的实例即可（view）；写操作必须 `connectWithSigner(..., signer)`。
+ */
 'use client';
 
 import { motion } from 'framer-motion';
@@ -25,37 +33,39 @@ const InitData: UserStakeData = {
 };
 
 const Withdraw = () => {
-  const stakeContract = useStakeContract();
+  const stakeContract = useStakeContract(); // view 读可用；写需 signer
   const { address, isConnected, signer } = useWeb3();
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(''); // 解质押数量（十进制字符串）
   const [unstakeLoading, setUnstakeLoading] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [userData, setUserData] = useState<UserStakeData>(InitData);
 
   const isWithdrawable = useMemo(
-    () => Number(userData.withdrawable) > 0 && isConnected,
+    () => Number(userData.withdrawable) > 0 && isConnected, // 有可取余额且已连接才可点 withdraw
     [userData, isConnected]
   );
 
+  /** 同步链上用户质押与提现队列状态，供三个统计卡片与按钮禁用逻辑使用 */
   const getUserData = useCallback(async () => {
-    if (!stakeContract || !address) return;
-    const staked = await stakeContract.stakingBalance(Pid, address);
+    if (!stakeContract || !address) return; // 无地址：无法查 user 维度（此处用 address 调 view）
+    const staked = await stakeContract.stakingBalance(Pid, address); // eth_call：读质押余额（BigInt）
+    /** `withdrawAmount` 返回结构由合约定义：此处解构为「申请总量」与「已可提」等 */
     const [requestAmount, pendingWithdrawAmount] = await stakeContract.withdrawAmount(
       Pid,
       address
     );
-    const ava = Number(formatUnits(pendingWithdrawAmount, 18));
-    const total = Number(formatUnits(requestAmount, 18));
+    const ava = Number(formatUnits(pendingWithdrawAmount, 18)); // 已解锁可提：转 JS number 做简单比较
+    const total = Number(formatUnits(requestAmount, 18)); // 赎回申请总量
     setUserData({
       staked: formatUnits(staked, 18),
-      withdrawPending: (total - ava).toFixed(4),
+      withdrawPending: (total - ava).toFixed(4), // 仍在锁定期内的部分：展示用
       withdrawable: ava.toString(),
     });
   }, [stakeContract, address]);
 
   useEffect(() => {
     if (stakeContract && address) {
-      getUserData();
+      getUserData(); // 进入页或依赖变化：同步链上
     }
   }, [address, stakeContract, getUserData]);
 
@@ -71,13 +81,14 @@ const Withdraw = () => {
     }
     try {
       setUnstakeLoading(true);
-      const stakeWithSigner = connectWithSigner(stakeContract, signer);
-      const tx = await stakeWithSigner.unstake(Pid, parseUnits(amount, 18));
-      await tx.wait();
+      /** 解质押：减少链上记账本金，进入合约定义的锁定期 */
+      const stakeWithSigner = connectWithSigner(stakeContract, signer); // unstake 为写方法
+      const tx = await stakeWithSigner.unstake(Pid, parseUnits(amount, 18)); // 本页假设 18 位与池一致
+      await tx.wait(); // 等上链
       toast.success('Unstake successful!');
       setAmount('');
       setUnstakeLoading(false);
-      getUserData();
+      getUserData(); // 刷新统计
     } catch (error) {
       setUnstakeLoading(false);
       toast.error('Transaction failed. Please try again.');
@@ -89,8 +100,9 @@ const Withdraw = () => {
     if (!stakeContract || !signer) return;
     try {
       setWithdrawLoading(true);
+      /** 到期后把「可提余额」从合约提到用户钱包 */
       const stakeWithSigner = connectWithSigner(stakeContract, signer);
-      const tx = await stakeWithSigner.withdraw(Pid);
+      const tx = await stakeWithSigner.withdraw(Pid); // 把已到期本金转回 msg.sender
       await tx.wait();
       toast.success('Withdraw successful!');
       setWithdrawLoading(false);

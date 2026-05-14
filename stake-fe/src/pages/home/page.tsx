@@ -1,5 +1,19 @@
 /**
  * 首页：质押（ETH 或 ERC20）+ 领取奖励（ethers + Web3Provider）。
+ *
+ * ## 数据从哪来？
+ * - `useStakeContract()`：根据 `signer ?? readProvider` 绑定的质押合约；未连接时仍可读部分 view。
+ * - `useRewards()`：读池子 `pool(Pid)`、用户 `user` / `stakingBalance` 等，展示待领取与池参数。
+ * - `useWalletBalance()`：用 **readProvider（HTTP）** 查当前地址 ETH 或 ERC20 余额，供输入校验。
+ *
+ * ## 写交易（质押 / 领取）的共同模式
+ * 1. 校验 `signer` 存在（用户已连接且能签名）。
+ * 2. `connectWithSigner(stakeContract, signer)`：把合约 runner 从 Provider 换成 Signer，否则 `deposit` 等会报无法发送交易。
+ * 3. `const tx = await ...` → `await tx.wait()`：等链上打包；`receipt.status === 1` 表示成功。
+ *
+ * ## ETH 池 vs ERC20 池
+ * - 池配置里的 `stTokenAddress` 为空 / 零地址 → 视为 **ETH 池**：`depositETH({ value })` 随交易附带 ETH。
+ * - 否则为 **ERC20 池**：先 `approve` 质押合约花费你的代币，再调 `deposit(Pid, amount)`。
  */
 'use client';
 
@@ -21,40 +35,46 @@ import { WalletConnectPrompt } from '../../components/WalletConnectPrompt';
 import { connectWithSigner } from '../../utils/connectWithSigner';
 
 const Home = () => {
-  const stakeContract = useStakeContract();
-  const { address, isConnected, signer } = useWeb3();
-  const { rewardsData, poolData, canClaim, refresh } = useRewards();
-  const [amount, setAmount] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [claimLoading, setClaimLoading] = useState(false);
+  const stakeContract = useStakeContract(); // ethers Contract：ABI+地址+runner；runner 随连接变化
+  const { address, isConnected, signer } = useWeb3(); // signer：发交易必需；address：余额与合约 user(pid,addr)
+  const { rewardsData, poolData, canClaim, refresh } = useRewards(); // 内部大量 stakeContract.view 调用
+  const [amount, setAmount] = useState(''); // 用户输入的质押数量（十进制字符串）
+  const [loading, setLoading] = useState(false); // 质押交易进行中
+  const [claimLoading, setClaimLoading] = useState(false); // 领取交易进行中
 
+  /** 池子质押资产：零地址表示原生 ETH；否则为 ERC20 的合约地址 */
   const isEthPool = useMemo(() => {
-    const addr = poolData.stTokenAddress;
+    const addr = poolData.stTokenAddress; // 来自链上 pool(pid) 元组字段
     return (
-      !addr ||
-      addr === ZeroAddress ||
-      addr === '0x0000000000000000000000000000000000000000'
+      !addr || // 未返回：按 ETH 处理
+      addr === ZeroAddress || // ethers 零地址常量
+      addr === '0x0000000000000000000000000000000000000000' // 显式零地址字符串
     );
   }, [poolData.stTokenAddress]);
 
-  const tokenContract = useTokenContract(poolData.stTokenAddress);
+  const tokenContract = useTokenContract(poolData.stTokenAddress); // ERC20 池时才有有效实例
 
   const { data: balance, refetch: refetchBalance } = useWalletBalance({
-    address,
-    tokenAddress: poolData.stTokenAddress,
+    address, // 当前钱包
+    tokenAddress: poolData.stTokenAddress, // ETH 池时仍传地址字段，但 isEth 为 true 会走 getBalance
     isEth: isEthPool,
+    /** 未连接时不查余额，避免用 null 地址调 RPC */
     enabled: isConnected && (isEthPool || !!poolData.stTokenAddress),
   });
 
+  /**
+   * 质押：ETH 走 `depositETH`；ERC20 先 `approve` 再 `deposit`。
+   * `parseUnits` 把人类可读小数转为链上 uint（wei / token smallest unit）。
+   */
   const handleStake = async () => {
-    if (!stakeContract || !signer) return;
+    if (!stakeContract || !signer) return; // 无 signer 不能发交易（Contract runner 可能仍是 provider）
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
 
-    const decimals = balance?.decimals ?? 18;
-    const amountWei = parseUnits(amount, decimals);
+    const decimals = balance?.decimals ?? 18; // 未拉到 balance 时按 18（ETH 默认）
+    const amountWei = parseUnits(amount, decimals); // BigInt：链上 uint256 安全
 
     if (!balance || parseFloat(amount) > parseFloat(balance.formatted)) {
       toast.error('Amount cannot be greater than current balance');
@@ -64,16 +84,17 @@ const Home = () => {
     try {
       setLoading(true);
 
-      const stakeWithSigner = connectWithSigner(stakeContract, signer);
+      const stakeWithSigner = connectWithSigner(stakeContract, signer); // 显式绑 Signer，准备写质押合约
 
       if (isEthPool) {
-        const tx = await stakeWithSigner.depositETH({ value: amountWei });
-        const receipt = await tx.wait();
+        const tx = await stakeWithSigner.depositETH({ value: amountWei }); // payable：value 随交易发送 ETH
+        const receipt = await tx.wait(); // 等待矿工打包；返回 TransactionReceipt
         if (receipt?.status === 1) {
+          // status 1：成功；0：链上回滚
           toast.success('Stake successful!');
           setAmount('');
-          refetchBalance();
-          refresh();
+          refetchBalance(); // 余额变：立刻用 readProvider 再查
+          refresh(); // 池子/奖励视图变：useRewards 再拉链上
           return;
         }
         toast.error('Stake failed!');
@@ -83,11 +104,11 @@ const Home = () => {
           setLoading(false);
           return;
         }
-        const stakeAddress = StakeContractAddress;
-        const tokenWithSigner = connectWithSigner(tokenContract, signer);
-        const approveTx = await tokenWithSigner.approve(stakeAddress, amountWei);
-        await approveTx.wait();
-        const depositTx = await stakeWithSigner.deposit(Pid, amountWei);
+        const stakeAddress = StakeContractAddress; // 质押合约作为 spender
+        const tokenWithSigner = connectWithSigner(tokenContract, signer); // approve 必须由用户签 ERC20 合约
+        const approveTx = await tokenWithSigner.approve(stakeAddress, amountWei); // 授权质押合约划转代币
+        await approveTx.wait(); // 等 approve 上链再 deposit，否则 deposit 可能 Insufficient allowance
+        const depositTx = await stakeWithSigner.deposit(Pid, amountWei); // 质押合约记录用户存款
         const receipt = await depositTx.wait();
         if (receipt?.status === 1) {
           toast.success('Stake successful!');
@@ -100,25 +121,26 @@ const Home = () => {
       }
     } catch (error) {
       toast.error('Transaction failed. Please try again.');
-      console.log(error, 'stake-error');
+      console.log(error, 'stake-error'); // 控制台保留原始错误便于调试（用户拒绝等）
     } finally {
       setLoading(false);
     }
   };
 
+  /** 领取奖励：单步 `claim(Pid)`，由合约把奖励代币转到当前用户地址 */
   const handleClaim = async () => {
     if (!stakeContract || !signer) return;
 
     try {
       setClaimLoading(true);
-      const stakeWithSigner = connectWithSigner(stakeContract, signer);
-      const tx = await stakeWithSigner.claim(Pid);
+      const stakeWithSigner = connectWithSigner(stakeContract, signer); // claim 为 nonpayable 写方法
+      const tx = await stakeWithSigner.claim(Pid); // 合约内按 msg.sender 发放奖励
       const receipt = await tx.wait();
 
       if (receipt?.status === 1) {
         toast.success('Claim successful!');
         setClaimLoading(false);
-        refresh();
+        refresh(); // 待领取应下降为 0 附近
         return;
       }
       toast.error('Claim failed!');
@@ -129,6 +151,7 @@ const Home = () => {
     }
   };
 
+  /** 未连接时只展示连接组件，避免误触发无 signer 的交易 */
   const showWalletActions = !isConnected;
 
   return (
