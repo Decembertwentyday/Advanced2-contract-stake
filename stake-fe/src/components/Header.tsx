@@ -113,6 +113,7 @@ const Header = () => {
                   连接
                 </Button>
               )}
+              {/*选中的代码是一个移动端菜单按钮*/}
               {isConnected && address && (
                 <div className="flex items-center gap-2">
                   <span className="text-gray-300 text-xs sm:text-sm font-mono hidden sm:inline">
@@ -139,6 +140,7 @@ const Header = () => {
         </div>
       </div>
 
+      {/*下面是移动端部分*/}
       <motion.div
         initial={false}
         animate={{ height: isMobileMenuOpen ? 'auto' : 0 }}

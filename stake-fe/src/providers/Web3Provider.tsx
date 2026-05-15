@@ -64,7 +64,7 @@ import React, {
 import { BrowserProvider, FallbackProvider, JsonRpcSigner, Network } from 'ethers';
 import { createSepoliaReadProvider } from '../utils/ethersReadProvider';
 import { SEPOLIA_CHAIN_ID, SEPOLIA_CHAIN_ID_HEX } from '../config/chain';
-import { formatWalletConnectError } from '../utils/formatWalletConnectError';
+import { formatWalletConnectError } from '../utils/formatWalletConnectError'; // 报错处理转中文
 import {
   type Eip1193Provider,
   type WalletCandidate,
