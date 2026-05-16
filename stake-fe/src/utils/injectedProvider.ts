@@ -112,7 +112,7 @@ type Eip6963AnnounceDetail = {
  * MetaMask 在 EIP-6963 标准中注册的官方 rdns 标识
  * 用于准确识别 MetaMask 钱包，避免依赖可能伪造的 isMetaMask 标志
  */
-const METAMASK_RDNS = 'io.metamask';
+const METAMASK_RDNS = 'io.metamask';// 反向域名
 
 
 /**
@@ -126,6 +126,7 @@ const METAMASK_RDNS = 'io.metamask';
  * - 用户点击"连接钱包"按钮
  * - 弹出一个对话框，列出所有可用的钱包
  * - 列表里的每一项就是一个 WalletCandidate
+ * 弹窗里展示的多个钱包-WalletCandidate 是每个钱包的对象格式。
  */
 export type WalletCandidate = {
   /** 唯一标识符，来自 EIP-6963 的 uuid 或自定义占位符
@@ -288,7 +289,7 @@ function discoverEip6963Candidates(timeoutMs: number): Promise<WalletCandidate[]
      * 什么时候会被调用？
      * - 每当有钱包响应我们的请求时
      * - 比如 MetaMask 会说"我是 MetaMask"，就会触发这个函数
-     * event - 事件对象，包含钱包的信息
+     * event - 事件对象，通过6963协议订阅--获取到的 包含钱包的信息
      */
     const onAnnounce = (event: Event) => {
       // 把普通的 Event 转换成 CustomEvent，并提取 detail 字段
@@ -324,14 +325,18 @@ function discoverEip6963Candidates(timeoutMs: number): Promise<WalletCandidate[]
     // 这样可以确保不会错过快速响应的钱包
     // 监听 'eip6963:announceProvider' 事件
     // 当钱包广播时，onAnnounce 函数就会被调用
+    //'eip6963:requestProvider'  // 这个事件是 EIP-6963 标准定义的
+    // 执行订阅--- 经过浏览器--传到钱包-- 钱包收到后，钱包会触发这个事件 ，window.dispatchEvent钱包就向外进行广播，代码收到 就执行 onAnnounce
     window.addEventListener('eip6963:announceProvider', onAnnounce);
 
     // 第二步：触发请求事件，让所有钱包开始广播
     // dispatchEvent 发送一个事件到页面上
     // 所有监听了这个事件的钱包都会收到通知
+    // eip6963:requestProvider 这个事件是 EIP-6963 标准定义的
     window.dispatchEvent(new Event('eip6963:requestProvider'));
 
     // 设置超时机制  设置定时器，等待一段时间后结束收集
+    // eip6963:announceProvider 这个事件是 EIP-6963 标准定义的
     window.setTimeout(() => {
       // 清理工作：移除事件监听器防止内存泄漏
       window.removeEventListener('eip6963:announceProvider', onAnnounce);
