@@ -13,6 +13,7 @@ import { fallback, http } from 'viem'; // fallback = 组合多个 transport；ht
  * - 否则用内联默认 key，仅方便本地跑通，可能被限流
  */
 const infuraSepoliaUrl =
+    // 只有构建后部署后才会有环境变量
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_INFURA_API_KEY
     ? `https://sepolia.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_API_KEY}`
     : 'https://sepolia.infura.io/v3/00a0215f2301422baa16a913ee44b0f1';

@@ -14,6 +14,7 @@ import { sepoliaTransport } from './sepoliaTransport'; // 本项目的多 RPC fa
 const ProjectId = '8d76c8234e7c2d581fa5d926d8a0d31b';
 
 /** 导出给 _app.tsx 的 <WagmiProvider config={config}> 使用 */
+// 设置了一个配置对象
 export const config = getDefaultConfig({
   appName: 'Meta Node Stake', // 连接钱包弹窗里显示的应用名
   projectId: ProjectId, // WalletConnect v2 必填
