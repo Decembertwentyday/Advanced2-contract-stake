@@ -26,7 +26,7 @@ export function WalletConnectPrompt() {
     );
   }
 
-  if (needsNetworkSwitch) {
+  if (needsNetworkSwitch) { //地址不对 链错误 展示
     return (
       <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">
         <Button

@@ -83,7 +83,7 @@ const Home = () => {
 
     try {
       setLoading(true);
-
+      // 创建一个新的实例，避免 signer 改变时丢失
       const stakeWithSigner = connectWithSigner(stakeContract, signer); // 显式绑 Signer，准备写质押合约
 
       if (isEthPool) {
