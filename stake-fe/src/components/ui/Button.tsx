@@ -26,10 +26,10 @@ export const Button = ({
   children,
   onClick,
   disabled = false,
-  loading = false,
+  loading = false, // 为 true 时显示转圈并禁用，避免链上交易被连点两次
   className,
   type = 'button',
-  variant = 'primary',
+  variant = 'primary', // 映射到 globals.css 中预定义的按钮皮肤
   fullWidth = false,
 }: ButtonProps) => {
   const baseStyles = "flex items-center justify-center space-x-2 transition-all duration-300";
@@ -42,10 +42,10 @@ export const Button = ({
 
   return (
     <motion.button
-      whileHover={{ scale: 1.02 }}
+      whileHover={{ scale: 1.02 }} // 悬停微缩放，纯 UI 反馈
       whileTap={{ scale: 0.98 }}
       onClick={onClick}
-      disabled={disabled || loading}
+      disabled={disabled || loading} // loading 与 disabled 等效，防止重复提交
       type={type}
       className={cn(
         baseStyles,

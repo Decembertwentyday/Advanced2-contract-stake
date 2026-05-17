@@ -1,17 +1,15 @@
 /**
- * MUI 主题：颜色、字体（next/font 加载的 Roboto）。
- *
- * 本项目的按钮/卡片大量用 Tailwind；ThemeProvider 仍包裹在 _app 中，
- * 以便少量 MUI 组件或未来扩展时样式一致。
+ * MUI 主题：供 _app.tsx 的 ThemeProvider 使用。
+ * 主 UI 是 Tailwind；本文件保证若使用 @mui/material 组件时颜色/字体一致。
  */
-import { Roboto } from 'next/font/google';
+import { Roboto } from 'next/font/google'; // Next 优化字体加载
 import { createTheme } from '@mui/material/styles';
 import { red } from '@mui/material/colors';
 
 export const roboto = Roboto({
   weight: ['300', '400', '500', '700'],
   subsets: ['latin'],
-  display: 'swap',
+  display: 'swap', // 字体加载期间先用系统字体，减少闪烁
 });
 
 const theme = createTheme({

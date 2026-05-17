@@ -17,17 +17,17 @@
  * 2. tx.wait() — 等待上链
  * 3. refresh / refetchBalance — 更新 UI
  */
-'use client'
-import { motion } from 'framer-motion';
+'use client' // 本页使用 hooks / 钱包，必须在客户端执行（Next.js 约定）
+import { motion } from 'framer-motion'; // 页面入场动画
 import { useStakeContract, useTokenContract, type HexAddress } from "../../hooks/useContract";
 import useRewards from "../../hooks/useRewards";
 import { useMemo, useState } from "react";
-import { Pid } from "../../utils";
-import { useAccount, useBalance } from "wagmi";
-import { ZeroAddress, parseUnits } from "ethers";
+import { Pid } from "../../utils"; // 固定操作 0 号质押池
+import { useAccount, useBalance } from "wagmi"; // 账户与 ETH/ERC20 余额（读链由 wagmi+viem 完成）
+import { ZeroAddress, parseUnits } from "ethers"; // 判断 ETH 池；金额转 wei
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import { toast } from "react-toastify";
-import { erc20WithSigner, stakeWithSigner } from "../../utils/stakeContractConnect";
+import { erc20WithSigner, stakeWithSigner } from "../../utils/stakeContractConnect"; // 写交易前绑定 Signer 并收窄类型
 import { useEthersSigner } from "../../utils/wagmiEthersAdapter";
 import { FiArrowDown, FiInfo, FiZap, FiTrendingUp, FiGift } from 'react-icons/fi';
 import { Button } from '../../components/ui/Button';
@@ -36,21 +36,32 @@ import { Card } from '../../components/ui/Card';
 import { StakeContractAddress } from "../../utils/env";
 
 const Home = () => {
-  const stakeContract = useStakeContract();
-  const { address, isConnected } = useAccount();
-  const { rewardsData, poolData, canClaim, refresh } = useRewards();
-  const [amount, setAmount] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [claimLoading, setClaimLoading] = useState(false);
-  const signer = useEthersSigner();
+  // --- 链与合约：读用 Contract，写 additionally 需要 signer ---
+  const stakeContract = useStakeContract(); // ethers 质押合约实例（runner=Signer 或只读 Provider）
+  const { address, isConnected } = useAccount(); // wagmi：当前连接地址与是否已连接
+  const { rewardsData, poolData, canClaim, refresh } = useRewards(); // 池子总量、待领奖励等只读聚合
+  const [amount, setAmount] = useState(''); // 用户输入的质押数量（字符串，便于 input 受控）
+  const [loading, setLoading] = useState(false); // 质押按钮 loading，防止重复提交
+  const [claimLoading, setClaimLoading] = useState(false); // 领取按钮 loading
+  const signer = useEthersSigner(); // 钱包 Signer；未连接为 undefined，写交易前必须判断
 
+  /**
+   * 判断当前池是否为「原生 ETH 池」。
+   * 原理：合约 pool() 返回的 stTokenAddress 为 0 地址表示抵押物是 ETH，走 depositETH+msg.value；
+   * 否则为 ERC20，需先 approve 再 deposit(Pid, amount)。
+   */
   const isEthPool = useMemo(() => {
     const addr = poolData.stTokenAddress;
     return !addr || addr === ZeroAddress || addr === '0x0000000000000000000000000000000000000000';
   }, [poolData.stTokenAddress]);
 
+  // 仅 ERC20 池需要：对抵押代币合约做 approve
   const tokenContract = useTokenContract(poolData.stTokenAddress as HexAddress | undefined);
 
+  /**
+   * wagmi 读余额：ETH 池 token 传 undefined；ERC20 池传 stTokenAddress。
+   * refetchInterval：每 10s 刷新，质押成功后也会手动 refetchBalance。
+   */
   const { data: balance, refetch: refetchBalance } = useBalance({
     address: address,
     token: isEthPool ? undefined : (poolData.stTokenAddress as HexAddress | undefined),
@@ -61,15 +72,16 @@ const Home = () => {
     }
   });
 
+  /** 质押：校验 → 编码金额 → 发交易 → wait 回执 → 刷新 UI */
   const handleStake = async () => {
-    if (!stakeContract || !signer) return;
+    if (!stakeContract || !signer) return; // 无合约或无签名者不能写链
     if (!amount || parseFloat(amount) <= 0) {
       toast.error('Please enter a valid amount');
       return;
     }
 
-    const decimals = balance?.decimals ?? 18;
-    const amountWei = parseUnits(amount, decimals);
+    const decimals = balance?.decimals ?? 18; // ETH 默认 18；ERC20 用代币 decimals
+    const amountWei = parseUnits(amount, decimals); // 人类可读 → wei（bigint）
 
     if (!balance || parseFloat(amount) > parseFloat(balance.formatted)) {
       toast.error('Amount cannot be greater than current balance');
@@ -80,13 +92,14 @@ const Home = () => {
       setLoading(true);
 
       if (isEthPool) {
+        //  payable：value 字段随交易发给合约
         const tx = await stakeWithSigner(stakeContract, signer).depositETH({ value: amountWei });
-        const res = await tx.wait();
+        const res = await tx.wait(); // 等待打包；res.status===1 表示成功
         if (res?.status === 1) {
           toast.success('Stake successful!');
           setAmount('');
           refetchBalance?.();
-          refresh();
+          refresh(); // 更新 useRewards 中的 staked / pending
           return;
         }
         toast.error('Stake failed!');
@@ -96,7 +109,8 @@ const Home = () => {
           setLoading(false);
           return;
         }
-        const stakeAddress = StakeContractAddress;
+        const stakeAddress = StakeContractAddress; // approve 的 spender = 质押合约
+        // 标准 ERC20 两步：授权 → 存款
         const approveTx = await erc20WithSigner(tokenContract, signer).approve(stakeAddress, amountWei);
         await approveTx.wait();
         const depositTx = await stakeWithSigner(stakeContract, signer).deposit(Pid, amountWei);
@@ -118,6 +132,7 @@ const Home = () => {
     }
   };
 
+  /** 领取 MetaNode 奖励：claim(Pid) → wait → refresh */
   const handleClaim = async () => {
     if (!stakeContract || !signer) return;
 

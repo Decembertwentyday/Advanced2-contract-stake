@@ -1,18 +1,17 @@
 /**
- * 未连接钱包时的「纯 HTTP」只读 Provider，与 wagmi 的 `useClient` 解耦。
+ * 未连接钱包时的「纯 HTTP」只读 Provider（不经过 wagmi）。
  *
- * 为何需要
- * - `useClient` 在未连接时往往拿不到可用 client；若产品仍要在断连时展示池子总量等公开数据，
- *   可用本模块的 FallbackProvider 直连公共 RPC（URL 列表与 `sepoliaTransport.ts` 对齐）。
+ * 使用场景：useContract 里 runner = signer ?? readOnly；
+ * 用户断连时仍可用 readOnly 对合约做 eth_call（若业务需要展示公开池数据）。
  *
- * 与 `wagmiEthersAdapter` 里 `useEthersProvider` 的区别
- * - 适配器：把 wagmi/viem 已建立的 client 转成 ethers Provider（依赖连接与 wagmi 状态）。
- * - 本文件：不经过 wagmi，适合作为 `runner = signer ?? readOnlyFallback` 的后半段。
+ * 与 useEthersProvider 区别：后者把 wagmi 的 useClient 转成 Provider，依赖 wagmi 状态；
+ * 本模块直接 new JsonRpcProvider，断连也能建连。
  */
 import { FallbackProvider, JsonRpcProvider, Network } from 'ethers';
 
-const SEPOLIA_CHAIN_ID = 11155111;
+const SEPOLIA_CHAIN_ID = 11155111; // Sepolia 链 ID，与 wagmi/chains sepolia.id 一致
 
+/** 与 sepoliaTransport.ts 保持同一组 RPC URL，避免「读」和「写」走不同节点导致状态不一致 */
 function sepoliaRpcUrls(): string[] {
   const infuraSepoliaUrl =
     typeof process !== 'undefined' && process.env.NEXT_PUBLIC_INFURA_API_KEY
@@ -25,18 +24,23 @@ function sepoliaRpcUrls(): string[] {
   ];
 }
 
+/** 模块级单例：避免每次 useMemo 都 new 一堆 Provider 连接 */
 let cached: FallbackProvider | null = null;
 
-/** Sepolia 只读 Provider（多 RPC fallback），模块内单例避免重复建连。 */
+/**
+ * 返回 Sepolia 的 ethers FallbackProvider。
+ * - 多个 JsonRpcProvider 包在一个 FallbackProvider 里，请求失败会换节点重试
+ * - staticNetwork：固定网络，减少 ethers v6 自动探测链 ID 的额外 RPC
+ */
 export function getSepoliaReadOnlyProvider(): FallbackProvider {
-  if (cached) return cached;
-  const network = Network.from(SEPOLIA_CHAIN_ID);
+  if (cached) return cached; // 已创建则复用
+  const network = Network.from(SEPOLIA_CHAIN_ID); // 描述链 ID 与名称
   const providers = sepoliaRpcUrls().map(
     (url) =>
       new JsonRpcProvider(url, network, {
-        staticNetwork: network,
+        staticNetwork: network, // 不反复 eth_chainId
       }),
   );
-  cached = new FallbackProvider(providers);
+  cached = new FallbackProvider(providers); // 聚合为 fallback
   return cached;
 }

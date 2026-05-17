@@ -39,14 +39,21 @@ const InitData: UserStakeData = {
 const Withdraw = () => {
   const stakeContract = useStakeContract();
   const { address, isConnected } = useAccount();
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(''); // 用户输入的 unstake 数量
   const [unstakeLoading, setUnstakeLoading] = useState(false);
   const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const signer = useEthersSigner();
+  const signer = useEthersSigner(); // 写 unstake / withdraw 必需
   const [userData, setUserData] = useState<UserStakeData>(InitData);
 
+  // 有可提取金额且已连接时才允许点 Withdraw
   const isWithdrawable = useMemo(() => Number(userData.withdrawable) > 0 && isConnected, [userData, isConnected]);
 
+  /**
+   * 拉取用户质押与提现进度。
+   * withdrawAmount 返回 [requestAmount, pendingWithdrawAmount]：
+   * - pendingWithdrawAmount → 已过锁定期、可 withdraw 到钱包
+   * - requestAmount - pending → 仍在等待期（withdrawPending）
+   */
   const getUserData = useCallback(async () => {
     if (!stakeContract || !address) return;
     const staked = await stakeContract.stakingBalance(Pid, address);
@@ -66,6 +73,7 @@ const Withdraw = () => {
     }
   }, [address, stakeContract, getUserData]);
 
+  /** 第一阶段：申请解质押，进入合约定义的锁定期 */
   const handleUnStake = useCallback(async () => {
     if (!stakeContract || !signer) return;
     if (!amount || parseFloat(amount) <= 0) {
@@ -79,7 +87,7 @@ const Withdraw = () => {
     try {
       setUnstakeLoading(true);
       const tx = await stakeWithSigner(stakeContract, signer).unstake(Pid, parseUnits(amount, 18));
-      await tx.wait();
+      await tx.wait(); // 等待链上确认后再刷新 getUserData
       toast.success('Unstake successful!');
       setAmount('');
       setUnstakeLoading(false);
@@ -91,6 +99,7 @@ const Withdraw = () => {
     }
   }, [stakeContract, signer, amount, userData.staked, getUserData]);
 
+  /** 第二阶段：锁定期结束后，把可提金额打到钱包（无 amount 参数，合约按 pending 处理） */
   const handleWithdraw = useCallback(async () => {
     if (!stakeContract || !signer) return;
     try {

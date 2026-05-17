@@ -25,7 +25,7 @@ import { Card } from '../../components/ui/Card';
 const Claim = () => {
   const stakeContract = useStakeContract();
   const { isConnected } = useAccount();
-  const { rewardsData, canClaim, refresh } = useRewards();
+  const { rewardsData, canClaim, refresh } = useRewards(); // 与首页共享同一套读链逻辑
   const [claimLoading, setClaimLoading] = useState(false);
   const signer = useEthersSigner();
 
@@ -34,10 +34,10 @@ const Claim = () => {
 
     try {
       setClaimLoading(true);
-      const tx = await stakeWithSigner(stakeContract, signer).claim(Pid);
+      const tx = await stakeWithSigner(stakeContract, signer).claim(Pid); // 写：领取 Pid 池奖励
       console.log(tx, '===tx===');
 
-      const res = await tx.wait();
+      const res = await tx.wait(); // 成功后 refresh 会把 pendingReward 更新为 0
 
       if (res?.status === 1) {
         toast.success('Claim successful!');

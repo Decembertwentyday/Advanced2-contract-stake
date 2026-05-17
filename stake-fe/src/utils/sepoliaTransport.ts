@@ -1,21 +1,26 @@
 /**
- * Sepolia 的 viem Transport：优先 Infura，失败则按顺序尝试公共节点。
+ * Sepolia 链的 viem Transport：多个 HTTP RPC 做 fallback。
  *
- * 原理（fallback）
- * - 单次 RPC 报错或超时时，viem 会尝试列表中的下一个 URL。
- * - Infura 免费层容易 -32002 / 限流；后备节点提高「读 + 写前模拟」成功率。
- *
- * NEXT_PUBLIC_INFURA_API_KEY
- * - 可选；未设置时使用内联默认 URL（仅便于本地跑通，正式环境建议只走环境变量）。
- * - 以 NEXT_PUBLIC_ 开头会被打进浏览器，切勿把「密钥」误解成「链上私钥」——这里只是 Infura 项目标识。
+ * 原理（viem fallback）：
+ * - 第一个 URL 失败/超时时自动试下一个，提高读链和 eth_sendRawTransaction 前模拟的成功率。
+ * - wagmi 内部用这份 transport 建 Client；与 ethersReadProvider 的 URL 列表应对齐。
  */
-import { fallback, http } from 'viem';
+import { fallback, http } from 'viem'; // fallback = 组合多个 transport；http = 单节点 HTTP
 
+/**
+ * Infura Sepolia 端点。
+ * - 有 NEXT_PUBLIC_INFURA_API_KEY 时用你自己的 key（正式环境推荐）
+ * - 否则用内联默认 key，仅方便本地跑通，可能被限流
+ */
 const infuraSepoliaUrl =
   typeof process !== 'undefined' && process.env.NEXT_PUBLIC_INFURA_API_KEY
     ? `https://sepolia.infura.io/v3/${process.env.NEXT_PUBLIC_INFURA_API_KEY}`
     : 'https://sepolia.infura.io/v3/00a0215f2301422baa16a913ee44b0f1';
 
+/**
+ * 导出给 wagmi config.transports[sepolia.id]。
+ * 顺序：Infura → publicnode → 1rpc；任一可用即可。
+ */
 export const sepoliaTransport = fallback([
   http(infuraSepoliaUrl),
   http('https://ethereum-sepolia-rpc.publicnode.com'),
