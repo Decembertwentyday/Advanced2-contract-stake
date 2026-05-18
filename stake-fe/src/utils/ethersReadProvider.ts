@@ -24,23 +24,41 @@ function sepoliaRpcUrls(): string[] {
   ];
 }
 
-/** 模块级单例：避免每次 useMemo 都 new 一堆 Provider 连接 */
+/** 模块级单例：避免每次 useMemo 都 new 一堆 Provider 连接
+ * 避免重复创建多个 RPC 连接，节省网络资源和内存
+ * 保持连接状态（如内部缓存），提高性能
+ * */
 let cached: FallbackProvider | null = null;
 
 /**
+ * 与 wagmiEthersAdapter.ts 的区别：
+ *    wagmiEthersAdapter.ts：动态适配 wagmi 的 Client，依赖 wagmi 状态（连接/断连、切链），适合「读写合约」的 Provider；
+ *    ethersReadProvider.ts：直接创建独立的 ethers Provider，不依赖 wagmi，适合「只读合约」的 Provider，断连也能用。
+ */
+
+/**
+这段代码创建了一个模块级单例的 ethers FallbackProvider，专门用于 Sepolia 测试网的只读操作（查询余额、读取合约状态等）。
  * 返回 Sepolia 的 ethers FallbackProvider。
  * - 多个 JsonRpcProvider 包在一个 FallbackProvider 里，请求失败会换节点重试
  * - staticNetwork：固定网络，减少 ethers v6 自动探测链 ID 的额外 RPC
+ * 返回类型固定：FallbackProvider（因为配置了多个 RPC）
+ * 无参数：不需要传入 chainId，硬编码为 Sepolia
  */
 export function getSepoliaReadOnlyProvider(): FallbackProvider {
   if (cached) return cached; // 已创建则复用
+  // ethers v6 的新 API：先创建 Network 对象，
+  // 描述链 ID 和名称；再创建 JsonRpcProvider，
+  // // ethers v6 的新 API传入 URL 和 Network；最后把多个 JsonRpcProvider 包在 FallbackProvider 里。
+  // Network里的数据格式 { chainId: number; name: string; }
   const network = Network.from(SEPOLIA_CHAIN_ID); // 描述链 ID 与名称
   const providers = sepoliaRpcUrls().map(
     (url) =>
+        // JsonRpcProvider 创建成只读的 Provider，传入 URL 和 Network；
+        // staticNetwork 固定网络，减少 ethers v6 自动探测链 ID 的额外 RPC 请求，提高性能
       new JsonRpcProvider(url, network, {
         staticNetwork: network, // 不反复 eth_chainId
       }),
-  );
+  );// FallbackProvider 组合多个 JsonRpcProvider，失败自动切换，提高可靠性
   cached = new FallbackProvider(providers); // 聚合为 fallback
   return cached;
 }

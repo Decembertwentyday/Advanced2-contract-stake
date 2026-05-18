@@ -21,6 +21,7 @@ const infuraSepoliaUrl =
 /**
  * 导出给 wagmi config.transports[sepolia.id]。
  * 顺序：Infura → publicnode → 1rpc；任一可用即可。
+ * fallback：第一个链失败，会切换到下一个，直到所有都失败。
  */
 export const sepoliaTransport = fallback([
   http(infuraSepoliaUrl),
