@@ -2,8 +2,8 @@
  * 调用 MetaMask 的 wallet_watchAsset，把 ERC20 加到钱包代币列表（不转账）。
  */
 export async function addTokenToMetaMask(tokenData: {
-  address: string;
-  symbol: string;
+  address: string; // 代币 地址
+  symbol: string; // 代币 符号
   decimals: number;
   image?: string;
 }) {
